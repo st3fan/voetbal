@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="5">
+  <title>Watchers</title>
+{{- template "themehead"}}
+  <style>
+    a.back { color: var(--link); text-decoration: none; font-size: 0.9rem; }
+    h1 { margin: 0.6rem 0 1.5rem; font-size: 1.6rem; }
+    table { border-collapse: collapse; min-width: 32rem; }
+    th, td { text-align: left; padding: 0.45rem 1.2rem 0.45rem 0; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    td { font-variant-numeric: tabular-nums; }
+    .empty { color: var(--dim); }
+    footer { margin-top: 2rem; color: var(--dim); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+{{- template "themepicker"}}
+  <a class="back" href="/">&larr; back to streams</a>
+  <h1>Watchers ({{len .Watchers}})</h1>
+{{- if .Watchers}}
+  <table>
+    <tr><th>IP</th><th>Watching since</th><th>Last seen</th><th>Requests</th></tr>
+{{- range .Watchers}}
+    <tr><td>{{.IP}}</td><td>{{.Since}}</td><td>{{.AgoSecs}}s ago</td><td>{{.Requests}}</td></tr>
+{{- end}}
+  </table>
+{{- else}}
+  <p class="empty">Nobody is watching right now.</p>
+{{- end}}
+  <footer>Active in the last 30 seconds &middot; IP addresses are anonymized &middot; refreshes every 5s</footer>
+</body>
+</html>
