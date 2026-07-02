@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+{{- template "themehead"}}
+  <style>
+    body { padding: 1.5rem; }
+    a.back { color: var(--link); text-decoration: none; font-size: 0.9rem; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0.6rem 0 1rem; }
+    video { width: 100%; max-height: 80vh; background: #000; border-radius: 10px; }
+    .err { color: var(--badge-locked-fg); }
+  </style>
+</head>
+<body>
+{{- template "themepicker"}}
+  <a class="back" href="/">&larr; back to streams</a>
+  <h1>{{.Title}}</h1>
+  <video id="player" controls autoplay playsinline></video>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <script>
+    const src = {{.Src}};
+    const video = document.getElementById('player');
+    function start() {
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(() => {});
+      });
+    }
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+      video.addEventListener('loadedmetadata', start, { once: true });
+    } else if (window.Hls && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, start);
+    } else {
+      document.body.insertAdjacentHTML('beforeend',
+        '<p class="err">HLS is not supported in this browser.</p>');
+    }
+  </script>
+</body>
+</html>

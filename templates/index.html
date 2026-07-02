@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NOS live streams</title>
+{{- template "themehead"}}
+  <style>
+    h1 { margin: 0 0 1.5rem; font-size: 1.6rem; }
+    .grid {
+      display: grid; gap: 1.25rem;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    }
+    .card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--thumb-bg); }
+    .noimg { display: block; }
+    .body { padding: 0.9rem 1rem 1.1rem; }
+    .title { margin: 0 0 0.6rem; font-size: 1.05rem; line-height: 1.35; }
+    .badges { margin-bottom: 0.6rem; }
+    .badge { font-size: 0.8rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 600; }
+    .badge.open   { background: var(--badge-open-bg); color: var(--badge-open-fg); }
+    .badge.locked { background: var(--badge-locked-bg); color: var(--badge-locked-fg); }
+    .offline { font-size: 0.7rem; color: var(--offline); vertical-align: middle; margin-left: 0.4rem; }
+    .qualities { font-size: 0.85rem; color: var(--soft); }
+    .qrow { margin-top: 0.3rem; }
+    .qualities .label { display: inline-block; min-width: 5rem; color: var(--muted); }
+    .q {
+      display: inline-block; margin: 0.1rem 0.15rem 0 0; padding: 0.1rem 0.45rem;
+      background: var(--q-bg); border: 1px solid var(--q-border); border-radius: 6px;
+      color: var(--q-fg); font-variant-numeric: tabular-nums;
+    }
+    .q.dim { color: var(--dim); }
+    a.q, button.q { text-decoration: none; cursor: pointer; }
+    button.q { font: inherit; }
+    a.q:hover, button.q:hover { background: var(--q-hover-bg); border-color: var(--q-hover-border); color: var(--q-hover-fg); }
+    .q.copied { background: var(--copied-bg); border-color: var(--copied-border); color: var(--copied-fg); }
+    footer { margin-top: 2rem; color: var(--dim); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+{{- template "themepicker"}}
+  <h1>NOS live streams</h1>
+  <div class="grid">
+{{- if .Error}}
+    <p>Failed to load streams: {{.Error}}</p>
+{{- else if not .Cards}}
+    <p>No live streams right now.</p>
+{{- else}}
+{{- range $card := .Cards}}
+    <article class="card">
+      {{if $card.Thumb}}<img class="thumb" src="{{$card.Thumb}}" alt="" loading="lazy">{{else}}<div class="thumb noimg"></div>{{end}}
+      <div class="body">
+        <h2 class="title">{{$card.Title}} {{if not $card.IsOnline}}<span class="offline">offline</span>{{end}}</h2>
+        <div class="badges">
+          <span class="badge {{if $card.Locked}}locked{{else}}open{{end}}">{{if $card.Locked}}🔒{{else}}🌍{{end}} {{$card.Region}}</span>
+        </div>
+        <div class="qualities">
+          <div class="qrow"><span class="label">Web:</span> {{if $card.Qualities}}{{range $card.Qualities}}<a class="q" href="/play?src={{.URL}}&amp;title={{$card.Title}}">{{.Label}}</a>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
+          <div class="qrow"><span class="label">URL:</span> {{if $card.Qualities}}{{range $card.Qualities}}<button class="q" type="button" data-url="{{.URL}}">{{.Label}}</button>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
+        </div>
+      </div>
+    </article>
+{{- end}}
+{{- end}}
+  </div>
+  <footer>Bron: nos.nl/api/live-livestreams &middot; 🌍 worldwide &middot; 🔒 region locked</footer>
+  <script>
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+      return Promise.resolve();
+    }
+    document.querySelectorAll('button.q[data-url]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        copyText(btn.dataset.url).then(function () {
+          var old = btn.textContent;
+          btn.textContent = 'copied!';
+          btn.classList.add('copied');
+          setTimeout(function () {
+            btn.textContent = old;
+            btn.classList.remove('copied');
+          }, 1200);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

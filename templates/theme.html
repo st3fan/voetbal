@@ -1,0 +1,88 @@
+{{define "themehead"}}
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: light-dark(#f2f4f8, #11141a);
+      --fg: light-dark(#1c212b, #e7e9ee);
+      --card-bg: light-dark(#ffffff, #1b1f29);
+      --border: light-dark(#d9dee8, #2a2f3a);
+      --muted: light-dark(#5b6472, #8a93a6);
+      --dim: light-dark(#7a8294, #6c7488);
+      --soft: light-dark(#667084, #aab2c2);
+      --link: light-dark(#2b6cb0, #8ab4ff);
+      --q-bg: light-dark(#eef1f6, #222838);
+      --q-border: light-dark(#ccd3e0, #313a4d);
+      --q-fg: light-dark(#3a4356, #cdd4e0);
+      --q-hover-bg: light-dark(#dde4f0, #2f3a52);
+      --q-hover-border: light-dark(#9fb0d0, #46557a);
+      --q-hover-fg: light-dark(#101521, #ffffff);
+      --badge-open-bg: light-dark(#d9f2e4, #143d2a);
+      --badge-open-fg: light-dark(#1c7a4a, #69e0a0);
+      --badge-locked-bg: light-dark(#fbe3d5, #3d1f14);
+      --badge-locked-fg: light-dark(#b35a24, #ffb38a);
+      --copied-bg: light-dark(#d9f2e4, #143d2a);
+      --copied-border: light-dark(#7bcfa3, #1f6b45);
+      --copied-fg: light-dark(#1c7a4a, #69e0a0);
+      --offline: light-dark(#c53030, #ff8a8a);
+      --thumb-bg: light-dark(#e2e6ee, #0c0e13);
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 2rem;
+      font: 16px/1.5 -apple-system, system-ui, sans-serif;
+      background: var(--bg); color: var(--fg);
+    }
+    .themepick {
+      position: fixed; top: 0.9rem; right: 0.9rem; z-index: 10;
+      display: flex; gap: 0.1rem; padding: 0.15rem;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 999px;
+    }
+    .themepick button {
+      border: 0; background: transparent; font: inherit; font-size: 0.85rem;
+      padding: 0.15rem 0.45rem; border-radius: 999px; cursor: pointer; line-height: 1.4;
+    }
+    .themepick button:hover { background: var(--q-bg); }
+    .themepick button.active { background: var(--q-hover-bg); box-shadow: inset 0 0 0 1px var(--q-hover-border); }
+  </style>
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    })();
+  </script>
+{{end}}
+
+{{define "themepicker"}}
+  <div class="themepick">
+    <button type="button" data-set="light" title="Light" aria-label="Light theme">☀️</button>
+    <button type="button" data-set="dark" title="Dark" aria-label="Dark theme">🌙</button>
+    <button type="button" data-set="system" title="System" aria-label="Follow system theme">💻</button>
+  </div>
+  <script>
+    (function () {
+      var buttons = document.querySelectorAll('.themepick button');
+      function mark(choice) {
+        buttons.forEach(function (b) {
+          b.classList.toggle('active', b.dataset.set === choice);
+        });
+      }
+      buttons.forEach(function (b) {
+        b.addEventListener('click', function () {
+          var choice = b.dataset.set;
+          if (choice === 'system') {
+            localStorage.removeItem('theme');
+            delete document.documentElement.dataset.theme;
+          } else {
+            localStorage.setItem('theme', choice);
+            document.documentElement.dataset.theme = choice;
+          }
+          mark(choice);
+        });
+      });
+      var stored = localStorage.getItem('theme');
+      mark(stored === 'light' || stored === 'dark' ? stored : 'system');
+    })();
+  </script>
+{{end}}
