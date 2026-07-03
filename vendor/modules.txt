@@ -1,0 +1,13 @@
+# github.com/oschwald/geoip2-golang/v2 v2.2.0
+## explicit; go 1.25.0
+github.com/oschwald/geoip2-golang/v2
+# github.com/oschwald/maxminddb-golang/v2 v2.3.0
+## explicit; go 1.25.0
+github.com/oschwald/maxminddb-golang/v2
+github.com/oschwald/maxminddb-golang/v2/internal/decoder
+github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors
+github.com/oschwald/maxminddb-golang/v2/mmdbdata
+# golang.org/x/sys v0.44.0
+## explicit; go 1.25.0
+golang.org/x/sys/unix
+golang.org/x/sys/windows

@@ -7,9 +7,14 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"maps"
 	"net/http"
+	"os"
+	"slices"
 	"strings"
 	"sync"
+
+	"github.com/oschwald/geoip2-golang/v2"
 )
 
 const version = "voetbal/0.1"
@@ -92,6 +97,19 @@ func main() {
 	mux.HandleFunc("GET /play", handlePlay)
 	mux.HandleFunc("GET /proxy", handleProxy)
 	mux.HandleFunc("GET /watchers", handleWatchers)
+	var handler http.Handler = mux
+	if allowed := parseRegionLock(os.Getenv("VOETBAL_REGION_LOCK")); len(allowed) > 0 {
+		path, err := ensureGeoDB(geoDBDir, geoDBURL)
+		if err != nil {
+			log.Fatalf("region lock: %v", err)
+		}
+		reader, err := geoip2.Open(path)
+		if err != nil {
+			log.Fatalf("region lock: %v", err)
+		}
+		handler = (&regionLock{allowed: allowed, lookup: geoDB{reader}}).middleware(mux)
+		log.Printf("region lock enabled: %s", strings.Join(slices.Sorted(maps.Keys(allowed)), ","))
+	}
 	log.Printf("listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	log.Fatal(http.ListenAndServe(*addr, handler))
 }
