@@ -1,0 +1,33 @@
+name: grype
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+          go build -o dist/voetbal .
+
+      - name: Scan binary with Grype
+        uses: anchore/scan-action@v6
+        with:
+          path: dist
+          fail-build: true
+          severity-cutoff: high
