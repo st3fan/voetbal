@@ -21,11 +21,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Build binary
-        run: go build -o voetbal .
+        run: |
+          mkdir -p dist
+          go build -o dist/voetbal .
 
       - name: Scan binary with Grype
         uses: anchore/scan-action@v6
         with:
-          path: voetbal
+          path: dist
           fail-build: true
           severity-cutoff: high
