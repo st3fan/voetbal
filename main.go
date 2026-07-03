@@ -34,8 +34,9 @@ type card struct {
 }
 
 type indexData struct {
-	Error string
-	Cards []card
+	SetupRequired bool
+	Error         string
+	Cards         []card
 }
 
 func buildCards(streams []Stream) []card {
@@ -72,6 +73,16 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		data.Cards = buildCards(streams)
 	}
 	render(w, "index.html", data)
+}
+
+func setupRequiredHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			render(w, "index.html", indexData{SetupRequired: true})
+			return
+		}
+		http.Error(w, "access is disabled: set VOETBAL_NETWORK_LOCK or VOETBAL_REGION_LOCK", http.StatusForbidden)
+	})
 }
 
 func handlePlay(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +140,9 @@ func main() {
 	}
 	if len(locks) > 0 {
 		handler = lockMiddleware(locks, mux)
+	} else {
+		log.Printf("no access lock configured: set VOETBAL_NETWORK_LOCK or VOETBAL_REGION_LOCK to enable access")
+		handler = setupRequiredHandler()
 	}
 	log.Printf("listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, handler))
