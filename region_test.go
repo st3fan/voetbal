@@ -224,7 +224,7 @@ func TestRegionLockMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	l := &regionLock{allowed: parseRegionLock("CA,US"), lookup: &stubLookup{code: "DE"}}
-	handler := l.middleware(next)
+	handler := lockMiddleware([]accessLock{l}, next)
 
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, requestFrom("8.8.8.8:1234"))
