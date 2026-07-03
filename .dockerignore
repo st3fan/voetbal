@@ -1,0 +1,8 @@
+.git/
+.github/
+.claude/
+.venv/
+voetbal
+README.md
+.dockerignore
+.gitignore
