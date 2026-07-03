@@ -1,9 +1,40 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		remote  string
+		headers map[string]string
+		want    string
+	}{
+		{"public remote no headers", "203.0.113.7:1234", nil, "203.0.113.7"},
+		{"remote without port", "203.0.113.7", nil, "203.0.113.7"},
+		{"public remote ignores xff", "203.0.113.7:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "203.0.113.7"},
+		{"private remote single xff", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "8.8.8.8"},
+		{"private remote takes last xff", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "8.8.8.8, 203.0.113.9"}, "203.0.113.9"},
+		{"private remote real ip", "192.168.1.1:1234", map[string]string{"X-Real-IP": "8.8.8.8"}, "8.8.8.8"},
+		{"xff wins over real ip", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "203.0.113.9", "X-Real-IP": "8.8.8.8"}, "203.0.113.9"},
+		{"loopback v6 remote", "[::1]:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "8.8.8.8"},
+		{"private remote no headers", "10.0.0.5:1234", nil, "10.0.0.5"},
+	}
+	for _, tt := range tests {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = tt.remote
+		for k, v := range tt.headers {
+			r.Header.Set(k, v)
+		}
+		if got := clientIP(r); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
 
 func TestAnonymizeIP(t *testing.T) {
 	tests := []struct {
