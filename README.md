@@ -53,6 +53,18 @@ docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
 
 Requests from private and loopback addresses are always allowed. IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0).
 
+## Network lock (optional)
+
+Set `VOETBAL_NETWORK_LOCK` to a comma-separated list of IP addresses, CIDRs, or ASNs to only allow access from those networks. For ASN entries the announced prefixes are fetched on startup from the [RIPEstat announced-prefixes API](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes):
+
+```
+docker run --rm -p 8000:8000 \
+  -e VOETBAL_NETWORK_LOCK=192.168.0.0/16,1.1.1.1,ASN577 \
+  ghcr.io/st3fan/voetbal:main
+```
+
+The network lock can be combined with the region lock: the network lock is checked first, and a request is allowed when either lock passes. Requests from private and loopback addresses are always allowed.
+
 ## Update
 
 ```

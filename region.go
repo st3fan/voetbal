@@ -119,13 +119,3 @@ func (l *regionLock) allow(r *http.Request) bool {
 	}
 	return l.allowed[code]
 }
-
-func (l *regionLock) middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.allow(r) {
-			http.Error(w, "not available in your region", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}

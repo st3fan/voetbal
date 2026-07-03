@@ -98,6 +98,23 @@ func main() {
 	mux.HandleFunc("GET /proxy", handleProxy)
 	mux.HandleFunc("GET /watchers", handleWatchers)
 	var handler http.Handler = mux
+	var locks []accessLock
+	prefixes, asns, err := parseNetworkLock(os.Getenv("VOETBAL_NETWORK_LOCK"))
+	if err != nil {
+		log.Fatalf("network lock: %v", err)
+	}
+	for _, asn := range asns {
+		announced, err := fetchASNPrefixes(ripePrefixesURL(asn))
+		if err != nil {
+			log.Fatalf("network lock: AS%s: %v", asn, err)
+		}
+		log.Printf("network lock: AS%s announces %d prefixes", asn, len(announced))
+		prefixes = append(prefixes, announced...)
+	}
+	if len(prefixes) > 0 || len(asns) > 0 {
+		locks = append(locks, &networkLock{prefixes: prefixes})
+		log.Printf("network lock enabled: %d prefixes", len(prefixes))
+	}
 	if allowed := parseRegionLock(os.Getenv("VOETBAL_REGION_LOCK")); len(allowed) > 0 {
 		path, err := ensureGeoDB(geoDBDir, geoDBURL)
 		if err != nil {
@@ -107,8 +124,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("region lock: %v", err)
 		}
-		handler = (&regionLock{allowed: allowed, lookup: geoDB{reader}}).middleware(mux)
+		locks = append(locks, &regionLock{allowed: allowed, lookup: geoDB{reader}})
 		log.Printf("region lock enabled: %s", strings.Join(slices.Sorted(maps.Keys(allowed)), ","))
+	}
+	if len(locks) > 0 {
+		handler = lockMiddleware(locks, mux)
 	}
 	log.Printf("listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, handler))
