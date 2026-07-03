@@ -113,9 +113,6 @@ func clientIP(r *http.Request) string {
 			return ip
 		}
 	}
-	if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
-		return rip
-	}
 	return host
 }
 

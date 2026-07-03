@@ -19,8 +19,7 @@ func TestClientIP(t *testing.T) {
 		{"public remote ignores xff", "203.0.113.7:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "203.0.113.7"},
 		{"private remote single xff", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "8.8.8.8"},
 		{"private remote takes last xff", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "8.8.8.8, 203.0.113.9"}, "203.0.113.9"},
-		{"private remote real ip", "192.168.1.1:1234", map[string]string{"X-Real-IP": "8.8.8.8"}, "8.8.8.8"},
-		{"xff wins over real ip", "192.168.1.1:1234", map[string]string{"X-Forwarded-For": "203.0.113.9", "X-Real-IP": "8.8.8.8"}, "203.0.113.9"},
+		{"real ip ignored", "192.168.1.1:1234", map[string]string{"X-Real-IP": "8.8.8.8"}, "192.168.1.1"},
 		{"loopback v6 remote", "[::1]:1234", map[string]string{"X-Forwarded-For": "8.8.8.8"}, "8.8.8.8"},
 		{"private remote no headers", "10.0.0.5:1234", nil, "10.0.0.5"},
 	}
