@@ -1,5 +1,8 @@
 # voetbal
 
+> [!IMPORTANT]
+> The app denies all access by default. You must set `VOETBAL_NETWORK_LOCK` or `VOETBAL_REGION_LOCK` (or both) before it will serve streams — see [Access locks](#access-locks) below. Until one of them is set, the homepage only shows a setup notice and every other request is rejected.
+
 ## Pull the image
 
 ```
@@ -33,9 +36,15 @@ docker start voetbal
 docker rm voetbal
 ```
 
-## Region lock (optional)
+## Access locks
 
-Set `VOETBAL_REGION_LOCK` to a comma-separated list of two-letter country codes to only allow access from those countries. The lock is off by default. When enabled, the app downloads a geo IP database into `/data` on startup (and refreshes it weekly), so mount a volume there to persist it:
+Access is controlled by two locks: a region lock and a network lock. **At least one of them must be configured** — when neither `VOETBAL_REGION_LOCK` nor `VOETBAL_NETWORK_LOCK` is set, the app defaults to no access: the homepage only shows a notice telling you to set one of these options, and all other requests are denied. The `docker run` commands above therefore need one of the `-e` options from the sections below to be useful.
+
+When both locks are configured, the network lock is checked first, and a request is allowed when either lock passes. Requests from private and loopback addresses are always allowed once at least one lock is configured.
+
+### Region lock
+
+Set `VOETBAL_REGION_LOCK` to a comma-separated list of two-letter country codes to only allow access from those countries. When enabled, the app downloads a geo IP database into `/data` on startup (and refreshes it weekly), so mount a volume there to persist it:
 
 ```
 docker run --rm -p 8000:8000 \
@@ -51,19 +60,23 @@ docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
   ghcr.io/st3fan/voetbal:main
 ```
 
-Requests from private and loopback addresses are always allowed. IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0).
+IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0).
 
-## Network lock (optional)
+### Network lock
 
-Set `VOETBAL_NETWORK_LOCK` to a comma-separated list of IP addresses, CIDRs, or ASNs to only allow access from those networks. For ASN entries the announced prefixes are fetched on startup from the [RIPEstat announced-prefixes API](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes):
+Set `VOETBAL_NETWORK_LOCK` to a comma-separated list of networks to only allow access from those networks. Each entry can be:
+
+- an IP address, e.g. `1.1.1.1` or `2001:db8::1` — allows exactly that address
+- a CIDR prefix, e.g. `192.168.0.0/16` or `2001:db8::/32` — allows the whole range
+- an ASN, e.g. `ASN577` or `AS577` (case-insensitive) — allows every prefix announced by that autonomous system; useful to allow your whole ISP
+
+For ASN entries the announced prefixes are fetched once on startup from the [RIPEstat announced-prefixes API](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes); restart the container to pick up changes to the announced prefixes. If an entry cannot be parsed, or the prefixes for an ASN cannot be fetched, the app logs the error and exits instead of starting with a partial lock.
 
 ```
 docker run --rm -p 8000:8000 \
   -e VOETBAL_NETWORK_LOCK=192.168.0.0/16,1.1.1.1,ASN577 \
   ghcr.io/st3fan/voetbal:main
 ```
-
-The network lock can be combined with the region lock: the network lock is checked first, and a request is allowed when either lock passes. Requests from private and loopback addresses are always allowed.
 
 ## Update
 

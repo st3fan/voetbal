@@ -44,7 +44,9 @@
 {{- template "themepicker"}}
   <h1>NOS live streams</h1>
   <div class="grid">
-{{- if .Error}}
+{{- if .SetupRequired}}
+    <p>Access is disabled: set <code>VOETBAL_NETWORK_LOCK</code> or <code>VOETBAL_REGION_LOCK</code> before this app will serve streams. See the README for details.</p>
+{{- else if .Error}}
     <p>Failed to load streams: {{.Error}}</p>
 {{- else if not .Cards}}
     <p>No live streams right now.</p>
