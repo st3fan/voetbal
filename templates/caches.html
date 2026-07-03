@@ -9,6 +9,8 @@
   <style>
     a.back { color: var(--link); text-decoration: none; font-size: 0.9rem; }
     h1 { margin: 0.6rem 0 1.5rem; font-size: 1.6rem; }
+    h2 { margin: 1.2rem 0 0.3rem; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    p.stats { margin: 0; font-variant-numeric: tabular-nums; color: var(--soft); }
     table { border-collapse: collapse; min-width: 40rem; }
     th, td { text-align: left; padding: 0.45rem 1.2rem 0.45rem 0; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -23,6 +25,11 @@
 {{- template "themepicker"}}
   <a class="back" href="/">&larr; back to streams</a>
   <h1>Caches ({{len .Entries}})</h1>
+  <h2>Memory</h2>
+  <p class="stats">{{.Memory}}</p>
+  <h2>Disk</h2>
+  <p class="stats">{{.Disk}}</p>
+  <h2>Entries</h2>
 {{- if .Entries}}
   <table>
     <tr><th>Key</th><th>Fetched</th><th>Expires</th><th>Contents</th></tr>
@@ -33,6 +40,6 @@
 {{- else}}
   <p class="empty">The cache is empty.</p>
 {{- end}}
-  <footer>Entries expire after 12 hours &middot; refreshes every 5s</footer>
+  <footer>metadata expires after 12 hours &middot; refreshes every 5s</footer>
 </body>
 </html>

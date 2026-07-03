@@ -2,9 +2,12 @@ package main
 
 import (
 	"cmp"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -130,23 +133,26 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// The variant media playlist is a live sliding window: always fetched
-	// fresh, never cached.
-	finalURL, media, err := fetchPlaylist(variant.URL)
-	if err != nil {
+	// The variant media playlist is a live sliding window: kept in memory
+	// only briefly (muxPlaylistTTL) so concurrent viewers share one
+	// upstream poll, never cached to disk.
+	e := streamMux.get("nos/"+id+"/"+resolution+"/playlist", variant.URL, muxPlaylistTTL, nil)
+	media, err := e.waitDone()
+	if err != nil || e.status != http.StatusOK {
 		streamCaches.evict(id) // stream likely ended; re-resolve next time
-		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	base, err := url.Parse(finalURL)
-	if err != nil {
+		if err == nil {
+			err = fmt.Errorf("status %d", e.status)
+		}
 		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", hlsMimetype)
-	io.WriteString(w, rewriteMediaPlaylist(media, base, nosPath("proxy", id, resolution)+"/"))
+	io.WriteString(w, rewriteMediaPlaylist(string(media), e.finalURL, nosPath("proxy", id, resolution)+"/"))
 }
 
+// handleSegment serves segment bytes: from the in-memory mux (shared with
+// everyone watching live), else from the disk cache (seek-back), else via
+// a coalesced upstream fetch that is written through to disk on success.
 func handleSegment(w http.ResponseWriter, r *http.Request) {
 	variant, ok := lookupVariant(w, r)
 	if !ok {
@@ -158,10 +164,73 @@ func handleSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := r.PathValue("file")
+	key := "nos/" + r.PathValue("id") + "/" + r.PathValue("resolution") + "/" + file
+	ref := file
+	onDisk := r.URL.RawQuery == "" // querystring segments stay out of the disk cache
 	if q := r.URL.RawQuery; q != "" {
-		file += "?" + q
+		ref += "?" + q
+		key += "?" + q
 	}
-	proxyUpstream(w, r, resolve(base, file))
+	target := resolve(base, ref)
+	if parsed, err := url.Parse(target); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !hostAllowed(parsed.Hostname()) {
+		http.Error(w, "upstream host not allowed", http.StatusForbidden)
+		return
+	}
+	now := time.Now()
+	if r.Header.Get("Range") != "" {
+		if path, ok := diskCaches.open(key, now); ok && onDisk {
+			watchers.touch(clientIP(r), now)
+			serveSegmentFile(w, r, path)
+			return
+		}
+		proxyUpstream(w, r, target) // ServeFile-less passthrough, honors Range
+		return
+	}
+	watchers.touch(clientIP(r), now)
+	if e := streamMux.peek(key); e != nil {
+		serveMuxEntry(w, e)
+		return
+	}
+	if onDisk {
+		if path, ok := diskCaches.open(key, now); ok {
+			serveSegmentFile(w, r, path)
+			return
+		}
+	}
+	var persist func([]byte)
+	if onDisk {
+		disk := diskCaches // captured now: persist runs on the fetch goroutine later
+		persist = func(data []byte) { disk.put(key, data, time.Now()) }
+	}
+	serveMuxEntry(w, streamMux.get(key, target, memoryCacheTTL, persist))
+}
+
+// serveMuxEntry streams a mux entry to the client, following the shared
+// buffer while the upstream fetch is still in progress.
+func serveMuxEntry(w http.ResponseWriter, e *muxEntry) {
+	if err := e.waitHeader(); err != nil {
+		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	ctype, _, _ := strings.Cut(e.contentType, ";")
+	w.Header().Set("Content-Type", strings.TrimSpace(ctype))
+	if length, ok := e.lengthIfDone(); ok {
+		w.Header().Set("Content-Length", strconv.Itoa(length))
+	}
+	w.WriteHeader(e.status)
+	e.serve(w)
+}
+
+// serveSegmentFile serves a disk-cached segment; http.ServeFile provides
+// Range support, the content type comes from the extension.
+func serveSegmentFile(w http.ResponseWriter, r *http.Request, path string) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".ts":
+		w.Header().Set("Content-Type", "video/MP2T")
+	case ".mp4", ".m4s":
+		w.Header().Set("Content-Type", "video/mp4")
+	}
+	http.ServeFile(w, r, path)
 }
 
 func handlePlayer(w http.ResponseWriter, r *http.Request) {

@@ -11,9 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/oschwald/geoip2-golang/v2"
 )
@@ -127,6 +130,46 @@ func handlePlay(w http.ResponseWriter, r *http.Request) {
 	render(w, "player.html", struct{ Title, Src string }{title, proxyPath(src)})
 }
 
+// parseSize parses "512MB", "12GB" or a plain number of megabytes.
+func parseSize(value string) (int64, error) {
+	s := strings.ToUpper(strings.TrimSpace(value))
+	unit := int64(1 << 20)
+	if suffix, ok := strings.CutSuffix(s, "GB"); ok {
+		unit, s = 1<<30, suffix
+	} else if suffix, ok := strings.CutSuffix(s, "MB"); ok {
+		s = suffix
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid size %q", value)
+	}
+	return n * unit, nil
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d <= 0 {
+		log.Fatalf("%s: invalid duration %q", name, value)
+	}
+	return d
+}
+
+func envSize(name string, fallback int64) int64 {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	n, err := parseSize(value)
+	if err != nil {
+		log.Fatalf("%s: %v", name, err)
+	}
+	return n
+}
+
 func main() {
 	addr := flag.String("addr", ":8000", "listen address")
 	showVersion := flag.Bool("v", false, "print version and exit")
@@ -148,6 +191,27 @@ func main() {
 	mux.HandleFunc("GET /stream/nos/{id}/{resolution}", handleStream)
 	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
+	memoryCacheTTL = envDuration("VOETBAL_MEMORY_CACHE_TTL", memoryCacheTTL)
+	streamMux.maxBytes = envSize("VOETBAL_MEMORY_CACHE_SIZE", streamMux.maxBytes)
+	log.Printf("memory cache: ttl %s, max %s", untilLabel(memoryCacheTTL), humanBytes(streamMux.maxBytes))
+	diskTTL := envDuration("VOETBAL_DISK_CACHE_TTL", 3*time.Hour)
+	if diskSize := envSize("VOETBAL_DISK_CACHE_SIZE", 12<<30); diskSize > 0 {
+		cache, err := newDiskCache(filepath.Join(dataPath(), "cache"), diskTTL, diskSize)
+		if err != nil {
+			log.Printf("disk cache disabled: %v", err)
+		} else {
+			diskCaches = cache
+			log.Printf("disk cache: %s, ttl %s, max %s (%s already cached)",
+				cache.root, untilLabel(diskTTL), humanBytes(diskSize), humanBytes(cache.totalBytes()))
+			go func() {
+				for range time.Tick(time.Minute) {
+					diskCaches.prune(time.Now())
+				}
+			}()
+		}
+	} else {
+		log.Printf("disk cache disabled: VOETBAL_DISK_CACHE_SIZE=0")
+	}
 	var handler http.Handler = mux
 	var locks []accessLock
 	prefixes, asns, err := parseNetworkLock(os.Getenv("VOETBAL_NETWORK_LOCK"))
