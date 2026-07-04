@@ -137,6 +137,7 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
+	mux.HandleFunc("GET /caches", handleCaches)
 	mux.HandleFunc("GET /play", handlePlay)
 	mux.HandleFunc("GET /player/nos/{id}", handlePlayer)
 	mux.HandleFunc("GET /player/nos/{id}/{resolution}", handlePlayer)

@@ -5,14 +5,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
+	"time"
 )
 
 // Short stream URLs. A stream is addressed by its NOS id and optionally a
-// variant resolution; the upstream URL is re-resolved from the NOS API on
-// every request, so there is no state and an id or resolution that no
-// longer exists is a 404.
+// variant resolution; the upstream URLs are resolved through streamCaches
+// (see cache.go) and an id or resolution that no longer exists is a 404.
 //
 //	/player/nos/{id}[/{resolution}]        in-browser player page
 //	/stream/nos/{id}                       master playlist (adaptive)
@@ -29,24 +28,6 @@ func nosPath(kind, id, resolution string) string {
 
 func streamPath(id, resolution string) string { return nosPath("stream", id, resolution) }
 func playerPath(id, resolution string) string { return nosPath("player", id, resolution) }
-
-func findStream(streams []Stream, id string) (Stream, bool) {
-	i := slices.IndexFunc(streams, func(s Stream) bool { return s.ID == id })
-	if i < 0 {
-		return Stream{}, false
-	}
-	return streams[i], true
-}
-
-// variantForResolution returns the URL of the first (highest-bandwidth)
-// variant with exactly the requested resolution, e.g. "1920x1080".
-func variantForResolution(variants []Variant, resolution string) (string, bool) {
-	i := slices.IndexFunc(variants, func(v Variant) bool { return v.Resolution == resolution })
-	if i < 0 {
-		return "", false
-	}
-	return variants[i].URL, true
-}
 
 // rewriteMasterPlaylist replaces every variant URI with the matching
 // /stream/nos/{id}/{resolution} path. Variants without a RESOLUTION and
@@ -112,45 +93,48 @@ func rewriteMediaPlaylist(text string, base *url.URL, prefix string) string {
 	return b.String()
 }
 
-// lookupStream finds the requested {id} in the live stream list. On failure
-// it writes the error response and reports false.
-func lookupStream(w http.ResponseWriter, r *http.Request) (Stream, bool) {
-	streams, err := fetchStreams()
+// lookupVariant returns the cached variant record for the request's
+// {id}/{resolution}. On failure it writes the error response and reports
+// false.
+func lookupVariant(w http.ResponseWriter, r *http.Request) (variantRecord, bool) {
+	v, ok, err := streamCaches.variant(r.PathValue("id"), r.PathValue("resolution"), time.Now())
 	if err != nil {
 		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
-		return Stream{}, false
+		return variantRecord{}, false
 	}
-	stream, ok := findStream(streams, r.PathValue("id"))
-	if !ok || streamURL(stream) == "" {
+	if !ok {
 		http.NotFound(w, r)
-		return Stream{}, false
+		return variantRecord{}, false
 	}
-	return stream, true
+	return v, true
 }
 
 func handleStream(w http.ResponseWriter, r *http.Request) {
-	stream, ok := lookupStream(w, r)
-	if !ok {
-		return
-	}
-	masterURL, master, err := fetchPlaylist(streamURL(stream))
-	if err != nil {
-		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
+	id := r.PathValue("id")
 	resolution := r.PathValue("resolution")
 	if resolution == "" {
+		master, ok, err := streamCaches.master(id, time.Now())
+		if err != nil {
+			http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", hlsMimetype)
-		io.WriteString(w, rewriteMasterPlaylist(master, stream.ID))
+		io.WriteString(w, rewriteMasterPlaylist(master, id))
 		return
 	}
-	variantURL, ok := variantForResolution(parseVariants(master, masterURL), resolution)
+	variant, ok := lookupVariant(w, r)
 	if !ok {
-		http.NotFound(w, r)
 		return
 	}
-	finalURL, media, err := fetchPlaylist(variantURL)
+	// The variant media playlist is a live sliding window: always fetched
+	// fresh, never cached.
+	finalURL, media, err := fetchPlaylist(variant.URL)
 	if err != nil {
+		streamCaches.evict(id) // stream likely ended; re-resolve next time
 		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -160,25 +144,15 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", hlsMimetype)
-	io.WriteString(w, rewriteMediaPlaylist(media, base, nosPath("proxy", stream.ID, resolution)+"/"))
+	io.WriteString(w, rewriteMediaPlaylist(media, base, nosPath("proxy", id, resolution)+"/"))
 }
 
 func handleSegment(w http.ResponseWriter, r *http.Request) {
-	stream, ok := lookupStream(w, r)
+	variant, ok := lookupVariant(w, r)
 	if !ok {
 		return
 	}
-	masterURL, master, err := fetchPlaylist(streamURL(stream))
-	if err != nil {
-		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	variantURL, ok := variantForResolution(parseVariants(master, masterURL), r.PathValue("resolution"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	base, err := url.Parse(variantURL)
+	base, err := url.Parse(variant.URL)
 	if err != nil {
 		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
 		return
@@ -191,11 +165,17 @@ func handleSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePlayer(w http.ResponseWriter, r *http.Request) {
-	stream, ok := lookupStream(w, r)
-	if !ok {
+	id := r.PathValue("id")
+	rec, ok, err := streamCaches.stream(id, time.Now())
+	if err != nil {
+		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	title := cmp.Or(stream.Title, "Stream")
-	src := streamPath(stream.ID, r.PathValue("resolution"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	title := cmp.Or(rec.Title, "Stream")
+	src := streamPath(id, r.PathValue("resolution"))
 	render(w, "player.html", struct{ Title, Src string }{title, src})
 }
