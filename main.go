@@ -9,6 +9,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -26,13 +27,35 @@ var templates = template.Must(template.New("").
 	Funcs(template.FuncMap{"proxyPath": proxyPath, "copyPath": copyPath}).
 	ParseFS(templateFS, "templates/*.html"))
 
+type qualityView struct {
+	Label    string
+	PlayPath string // in-browser player page link
+	Path     string // short proxied path handed out by the copy button
+}
+
 type card struct {
 	Title     string
 	Thumb     string
 	Locked    bool
 	Region    string
 	IsOnline  bool
-	Qualities []Quality
+	Qualities []qualityView
+}
+
+func qualityViews(stream Stream, qualities []Quality) []qualityView {
+	var views []qualityView
+	for _, q := range qualities {
+		path := streamProxyPath(stream.ID, q.Resolution)
+		playPath := streamPlayPath(stream.ID, q.Resolution)
+		if stream.ID == "" {
+			playPath = "/play?" + url.Values{"src": {q.URL}, "title": {cmp.Or(stream.Title, "Stream")}}.Encode()
+		}
+		if copyShortURLs || stream.ID == "" {
+			path = copyPath(q.URL)
+		}
+		views = append(views, qualityView{Label: q.Label, PlayPath: playPath, Path: path})
+	}
+	return views
 }
 
 type indexData struct {
@@ -53,7 +76,7 @@ func buildCards(streams []Stream) []card {
 				Locked:    len(stream.AllowedAreas) > 0,
 				Region:    regionLabel(stream),
 				IsOnline:  stream.IsOnline,
-				Qualities: streamQualities(stream),
+				Qualities: qualityViews(stream, streamQualities(stream)),
 			}
 		})
 	}
@@ -106,6 +129,30 @@ func handlePlay(w http.ResponseWriter, r *http.Request) {
 	render(w, "player.html", struct{ Title, Src string }{title, proxyPath(src)})
 }
 
+// streamPlayPath is the player-page counterpart of streamProxyPath.
+func streamPlayPath(id, resolution string) string {
+	return "/play/nos" + strings.TrimPrefix(streamProxyPath(id, resolution), "/proxy/nos")
+}
+
+// handleStreamPlay serves the in-browser player for /play/nos/{id} and
+// /play/nos/{id}/{resolution}; the video src is the matching short proxy
+// path, which re-resolves the stream on request.
+func handleStreamPlay(w http.ResponseWriter, r *http.Request) {
+	streams, err := fetchStreams()
+	if err != nil {
+		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	stream, ok := findStream(streams, r.PathValue("id"))
+	if !ok || streamURL(stream) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	title := cmp.Or(stream.Title, "Stream")
+	src := streamProxyPath(stream.ID, r.PathValue("resolution"))
+	render(w, "player.html", struct{ Title, Src string }{title, src})
+}
+
 func main() {
 	addr := flag.String("addr", ":8000", "listen address")
 	showVersion := flag.Bool("v", false, "print version and exit")
@@ -117,8 +164,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /play", handlePlay)
+	mux.HandleFunc("GET /play/nos/{id}", handleStreamPlay)
+	mux.HandleFunc("GET /play/nos/{id}/{resolution}", handleStreamPlay)
 	mux.HandleFunc("GET /playlist.m3u", handlePlaylist)
 	mux.HandleFunc("GET /proxy", handleProxy)
+	mux.HandleFunc("GET /proxy/nos/{id}", handleStreamProxy)
+	mux.HandleFunc("GET /proxy/nos/{id}/{resolution}", handleStreamProxy)
 	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
 	var handler http.Handler = mux

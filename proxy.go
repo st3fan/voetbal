@@ -40,6 +40,16 @@ func proxyPath(u string) string {
 	return "/proxy?" + url.Values{"url": {u}}.Encode()
 }
 
+// streamProxyPath is the short form of proxyPath: the upstream URL is
+// re-resolved from the stream id (and optional resolution) on request.
+func streamProxyPath(id, resolution string) string {
+	path := "/proxy/nos/" + url.PathEscape(id)
+	if resolution != "" {
+		path += "/" + url.PathEscape(resolution)
+	}
+	return path
+}
+
 func isPlaylist(contentType string, u *url.URL) bool {
 	ctype, _, _ := strings.Cut(contentType, ";")
 	if slices.Contains(playlistContentTypes, strings.ToLower(strings.TrimSpace(ctype))) {
@@ -80,7 +90,10 @@ func rewritePlaylist(text string, base *url.URL) string {
 }
 
 func handleProxy(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("url")
+	proxyUpstream(w, r, r.URL.Query().Get("url"))
+}
+
+func proxyUpstream(w http.ResponseWriter, r *http.Request, target string) {
 	parsed, err := url.Parse(target)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !hostAllowed(parsed.Hostname()) {
 		http.Error(w, "upstream host not allowed", http.StatusForbidden)
@@ -124,4 +137,55 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", strings.TrimSpace(ctype))
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func findStream(streams []Stream, id string) (Stream, bool) {
+	i := slices.IndexFunc(streams, func(s Stream) bool { return s.ID == id })
+	if i < 0 {
+		return Stream{}, false
+	}
+	return streams[i], true
+}
+
+// variantForResolution returns the URL of the first (highest-bandwidth)
+// variant with exactly the requested resolution, e.g. "1920x1080".
+func variantForResolution(variants []Variant, resolution string) (string, bool) {
+	i := slices.IndexFunc(variants, func(v Variant) bool { return v.Resolution == resolution })
+	if i < 0 {
+		return "", false
+	}
+	return variants[i].URL, true
+}
+
+// handleStreamProxy serves /proxy/nos/{id} (master playlist, adaptive) and
+// /proxy/nos/{id}/{resolution} (a specific variant). The upstream URL is
+// re-resolved from the NOS API on every request, so there is no state; an
+// id or resolution that no longer exists is a 404.
+func handleStreamProxy(w http.ResponseWriter, r *http.Request) {
+	streams, err := fetchStreams()
+	if err != nil {
+		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	stream, ok := findStream(streams, r.PathValue("id"))
+	if !ok || streamURL(stream) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	resolution := r.PathValue("resolution")
+	if resolution == "" {
+		proxyUpstream(w, r, streamURL(stream))
+		return
+	}
+	masterURL, playlist, err := fetchPlaylist(streamURL(stream))
+	if err != nil {
+		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	target, ok := variantForResolution(parseVariants(playlist, masterURL), resolution)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	proxyUpstream(w, r, target)
 }

@@ -126,13 +126,15 @@ func TestIndexCopyURLIsShortWhenEnabled(t *testing.T) {
 	defer func(old bool) { copyShortURLs = old }(copyShortURLs)
 	copyShortURLs = true
 
-	u := "https://x.cdn.nos.nl/short.m3u8"
+	stream := Stream{ID: "2616266", Title: "Test"}
+	qualities := []Quality{{Label: "1080p", URL: "https://x.cdn.nos.nl/short.m3u8", Resolution: "1920x1080", Height: 1080}}
+
 	w := httptest.NewRecorder()
 	render(w, "index.html", indexData{
 		BaseURL: "http://voetbal.example:8000",
 		Cards: []card{{
 			Title:     "Test",
-			Qualities: []Quality{{Label: "1080p", URL: u}},
+			Qualities: qualityViews(stream, qualities),
 		}},
 	})
 

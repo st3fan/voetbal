@@ -24,12 +24,18 @@ func TestM3UAttr(t *testing.T) {
 func TestPlaylistEntries(t *testing.T) {
 	streams := []Stream{
 		{
+			ID:      "111",
 			Title:   "Stream A",
 			Formats: []Format{{Mimetype: hlsMimetype, URL: "https://cdn.nos.nl/a/master.m3u8"}},
 		},
 		{
+			ID:      "222",
 			Title:   "Stream B",
 			Formats: []Format{{Mimetype: hlsMimetype, URL: "https://cdn.nos.nl/b/master.m3u8"}},
+		},
+		{
+			Title:   "No ID", // pre-id API shape: falls back to the long proxy URL
+			Formats: []Format{{Mimetype: hlsMimetype, URL: "https://cdn.nos.nl/c/master.m3u8"}},
 		},
 		{
 			Title: "No URL", // no formats: should be skipped
@@ -38,22 +44,23 @@ func TestPlaylistEntries(t *testing.T) {
 	streams[0].IndexImage.Ratio16x9 = []Image{{Width: 1280, URL: "https://cdn.nos.nl/a/thumb.jpg"}}
 
 	// Stream A has qualities (ascending, as streamQualities returns them);
-	// stream B has none and should fall back to its master URL.
+	// the others have none and should fall back to their master playlist.
 	qualities := func(s Stream) []Quality {
 		if s.Title != "Stream A" {
 			return nil
 		}
 		return []Quality{
-			{Label: "540p", URL: "https://cdn.nos.nl/a/540.m3u8", Height: 540},
-			{Label: "1080p", URL: "https://cdn.nos.nl/a/1080.m3u8", Height: 1080},
+			{Label: "540p", URL: "https://cdn.nos.nl/a/540.m3u8", Resolution: "960x540", Height: 540},
+			{Label: "1080p", URL: "https://cdn.nos.nl/a/1080.m3u8", Resolution: "1920x1080", Height: 1080},
 		}
 	}
 
 	got := playlistEntries(streams, qualities)
 	want := []m3uEntry{
-		{Name: "Stream A (1080p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", URL: "https://cdn.nos.nl/a/1080.m3u8"},
-		{Name: "Stream A (540p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", URL: "https://cdn.nos.nl/a/540.m3u8"},
-		{Name: "Stream B", URL: "https://cdn.nos.nl/b/master.m3u8"},
+		{Name: "Stream A (1080p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", Path: "/proxy/nos/111/1920x1080"},
+		{Name: "Stream A (540p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", Path: "/proxy/nos/111/960x540"},
+		{Name: "Stream B", Path: "/proxy/nos/222"},
+		{Name: "No ID", Path: proxyPath("https://cdn.nos.nl/c/master.m3u8")},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d: %+v", len(got), len(want), got)
@@ -75,8 +82,8 @@ func TestPlaylistEntriesNoTitle(t *testing.T) {
 
 func TestBuildM3U(t *testing.T) {
 	entries := []m3uEntry{
-		{Name: "Stream A (1080p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", URL: "https://cdn.nos.nl/a/1080.m3u8"},
-		{Name: `Voetbal "Extra"`, URL: "https://cdn.nos.nl/b/master.m3u8"},
+		{Name: "Stream A (1080p)", Logo: "https://cdn.nos.nl/a/thumb.jpg", Path: "/proxy/nos/111/1920x1080"},
+		{Name: `Voetbal "Extra"`, Path: "/proxy/nos/222"},
 	}
 
 	got := buildM3U("http://example.com:8000", entries)
@@ -85,9 +92,9 @@ func TestBuildM3U(t *testing.T) {
 	want := []string{
 		"#EXTM3U",
 		`#EXTINF:-1 tvg-name="Stream A (1080p)" tvg-logo="https://cdn.nos.nl/a/thumb.jpg" group-title="NOS",Stream A (1080p)`,
-		"http://example.com:8000" + proxyPath("https://cdn.nos.nl/a/1080.m3u8"),
+		"http://example.com:8000/proxy/nos/111/1920x1080",
 		`#EXTINF:-1 tvg-name="Voetbal 'Extra'" group-title="NOS",Voetbal 'Extra'`,
-		"http://example.com:8000" + proxyPath("https://cdn.nos.nl/b/master.m3u8"),
+		"http://example.com:8000/proxy/nos/222",
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("got %d lines, want %d:\n%s", len(lines), len(want), got)

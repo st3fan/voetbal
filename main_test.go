@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -29,23 +30,55 @@ func TestRequestBaseURL(t *testing.T) {
 }
 
 func TestIndexCopyURLIsProxied(t *testing.T) {
+	defer func(old bool) { copyShortURLs = old }(copyShortURLs)
+	copyShortURLs = false
+
+	stream := Stream{ID: "2616266", Title: "Test"}
+	qualities := []Quality{{Label: "1080p", URL: "https://x.cdn.nos.nl/a.m3u8", Resolution: "1920x1080", Height: 1080}}
+
 	w := httptest.NewRecorder()
 	render(w, "index.html", indexData{
 		BaseURL: "http://voetbal.example:8000",
 		Cards: []card{{
 			Title:     "Test",
-			Qualities: []Quality{{Label: "1080p", URL: "https://x.cdn.nos.nl/a.m3u8"}},
+			Qualities: qualityViews(stream, qualities),
 		}},
 	})
 
 	body := w.Body.String()
-	want := `data-url="http://voetbal.example:8000` + proxyPath("https://x.cdn.nos.nl/a.m3u8")
-	want = strings.ReplaceAll(want, "&", "&amp;")
+	want := `data-url="http://voetbal.example:8000/proxy/nos/2616266/1920x1080"`
 	if !strings.Contains(body, want) {
 		t.Errorf("copy button URL not proxied: want substring %q in body:\n%s", want, body)
 	}
-	if strings.Contains(body, `data-url="https://x.cdn.nos.nl`) {
-		t.Errorf("copy button still carries the direct stream URL")
+	if wantPlay := `href="/play/nos/2616266/1920x1080"`; !strings.Contains(body, wantPlay) {
+		t.Errorf("web play link not short: want substring %q in body:\n%s", wantPlay, body)
+	}
+	if strings.Contains(body, "x.cdn.nos.nl") {
+		t.Errorf("page still carries the direct stream URL")
+	}
+}
+
+func TestStreamPlayPath(t *testing.T) {
+	if got, want := streamPlayPath("2616266", "1920x1080"), "/play/nos/2616266/1920x1080"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got, want := streamPlayPath("2616266", ""), "/play/nos/2616266"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestQualityViewsWithoutStreamID(t *testing.T) {
+	defer func(old bool) { copyShortURLs = old }(copyShortURLs)
+	copyShortURLs = false
+
+	qualities := []Quality{{Label: "1080p", URL: "https://x.cdn.nos.nl/a.m3u8", Resolution: "1920x1080", Height: 1080}}
+	views := qualityViews(Stream{Title: "No ID"}, qualities)
+	if len(views) != 1 || views[0].Path != proxyPath("https://x.cdn.nos.nl/a.m3u8") {
+		t.Errorf("expected long proxy path fallback, got %+v", views)
+	}
+	wantPlay := "/play?" + url.Values{"src": {"https://x.cdn.nos.nl/a.m3u8"}, "title": {"No ID"}}.Encode()
+	if len(views) == 1 && views[0].PlayPath != wantPlay {
+		t.Errorf("PlayPath = %q, want %q", views[0].PlayPath, wantPlay)
 	}
 }
 
