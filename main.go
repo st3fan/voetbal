@@ -22,7 +22,9 @@ const version = "voetbal/0.1"
 //go:embed templates/*.html
 var templateFS embed.FS
 
-var templates = template.Must(template.ParseFS(templateFS, "templates/*.html"))
+var templates = template.Must(template.New("").
+	Funcs(template.FuncMap{"proxyPath": proxyPath}).
+	ParseFS(templateFS, "templates/*.html"))
 
 type card struct {
 	Title     string
@@ -36,6 +38,7 @@ type card struct {
 type indexData struct {
 	SetupRequired bool
 	Error         string
+	BaseURL       string
 	Cards         []card
 }
 
@@ -65,8 +68,16 @@ func render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+func requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	var data indexData
+	data := indexData{BaseURL: requestBaseURL(r)}
 	if streams, err := fetchStreams(); err != nil {
 		data.Error = err.Error()
 	} else {
