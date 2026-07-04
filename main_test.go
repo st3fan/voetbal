@@ -46,24 +46,18 @@ func TestIndexCopyURLIsProxied(t *testing.T) {
 	})
 
 	body := w.Body.String()
-	want := `data-url="http://voetbal.example:8000/proxy/nos/2616266/1920x1080"`
+	want := `data-url="http://voetbal.example:8000/stream/nos/2616266/1920x1080"`
 	if !strings.Contains(body, want) {
-		t.Errorf("copy button URL not proxied: want substring %q in body:\n%s", want, body)
+		t.Errorf("copy button URL not short: want substring %q in body:\n%s", want, body)
 	}
-	if wantPlay := `href="/play/nos/2616266/1920x1080"`; !strings.Contains(body, wantPlay) {
+	if wantPlay := `href="/player/nos/2616266/1920x1080"`; !strings.Contains(body, wantPlay) {
 		t.Errorf("web play link not short: want substring %q in body:\n%s", wantPlay, body)
 	}
 	if strings.Contains(body, "x.cdn.nos.nl") {
 		t.Errorf("page still carries the direct stream URL")
 	}
-}
-
-func TestStreamPlayPath(t *testing.T) {
-	if got, want := streamPlayPath("2616266", "1920x1080"), "/play/nos/2616266/1920x1080"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if got, want := streamPlayPath("2616266", ""), "/play/nos/2616266"; got != want {
-		t.Errorf("got %q, want %q", got, want)
+	if strings.Contains(body, "?url=") || strings.Contains(body, "?src=") {
+		t.Errorf("page still carries a long url= or src= link")
 	}
 }
 

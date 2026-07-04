@@ -122,7 +122,9 @@ func TestHandleShortURLRefreshesOnMiss(t *testing.T) {
 	}
 }
 
-func TestIndexCopyURLIsShortWhenEnabled(t *testing.T) {
+// The /stream/nos short URLs supersede the /r/{code} copy URLs: even with
+// VOETBAL_COPY_SHORT_URLS set, the copy buttons hand out /stream paths.
+func TestIndexCopyURLIgnoresShortURLSetting(t *testing.T) {
 	defer func(old bool) { copyShortURLs = old }(copyShortURLs)
 	copyShortURLs = true
 
@@ -139,11 +141,11 @@ func TestIndexCopyURLIsShortWhenEnabled(t *testing.T) {
 	})
 
 	body := w.Body.String()
-	want := `data-url="http://voetbal.example:8000/r/`
+	want := `data-url="http://voetbal.example:8000/stream/nos/2616266/1920x1080"`
 	if !strings.Contains(body, want) {
-		t.Errorf("copy button URL not shortened: want substring %q in body:\n%s", want, body)
+		t.Errorf("copy button URL not short: want substring %q in body:\n%s", want, body)
 	}
-	if strings.Contains(body, "/proxy?") {
-		t.Errorf("copy button still carries the long proxy URL")
+	if strings.Contains(body, "/proxy?") || strings.Contains(body, "/r/") {
+		t.Errorf("copy button carries a legacy URL form:\n%s", body)
 	}
 }

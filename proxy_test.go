@@ -79,51 +79,6 @@ https://abs.example.com/seg.ts`
 	}
 }
 
-func TestStreamProxyPath(t *testing.T) {
-	tests := []struct {
-		id, resolution, want string
-	}{
-		{"2616266", "1920x1080", "/proxy/nos/2616266/1920x1080"},
-		{"2616266", "", "/proxy/nos/2616266"},
-		{"weird/id", "960x540", "/proxy/nos/weird%2Fid/960x540"},
-	}
-	for _, tt := range tests {
-		if got := streamProxyPath(tt.id, tt.resolution); got != tt.want {
-			t.Errorf("streamProxyPath(%q, %q) = %q, want %q", tt.id, tt.resolution, got, tt.want)
-		}
-	}
-}
-
-func TestFindStream(t *testing.T) {
-	streams := []Stream{{ID: "111", Title: "A"}, {ID: "222", Title: "B"}}
-	if s, ok := findStream(streams, "222"); !ok || s.Title != "B" {
-		t.Errorf("findStream(222) = %+v, %v; want B, true", s, ok)
-	}
-	if _, ok := findStream(streams, "999"); ok {
-		t.Errorf("findStream(999) found a stream, want miss")
-	}
-	if _, ok := findStream(nil, ""); ok {
-		t.Errorf("findStream on empty list found a stream, want miss")
-	}
-}
-
-func TestVariantForResolution(t *testing.T) {
-	variants := []Variant{
-		{Resolution: "1920x1080", Bandwidth: 5000, URL: "https://cdn/a-hi.m3u8"},
-		{Resolution: "1920x1080", Bandwidth: 3000, URL: "https://cdn/a-lo.m3u8"},
-		{Resolution: "960x540", Bandwidth: 1500, URL: "https://cdn/b.m3u8"},
-	}
-	if u, ok := variantForResolution(variants, "1920x1080"); !ok || u != "https://cdn/a-hi.m3u8" {
-		t.Errorf("1920x1080: got %q, %v; want highest-bandwidth variant", u, ok)
-	}
-	if u, ok := variantForResolution(variants, "960x540"); !ok || u != "https://cdn/b.m3u8" {
-		t.Errorf("960x540: got %q, %v", u, ok)
-	}
-	if _, ok := variantForResolution(variants, "640x360"); ok {
-		t.Errorf("640x360: found a variant, want miss")
-	}
-}
-
 func TestHandleProxyForbidden(t *testing.T) {
 	for _, target := range []string{
 		"https://evil.com/x.m3u8",

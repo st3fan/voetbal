@@ -35,7 +35,7 @@ func playlistEntries(streams []Stream, qualities func(Stream) []Quality) []m3uEn
 			logo := thumbnailURL(stream, 640)
 			qs := qualities(stream)
 			if len(qs) == 0 {
-				path := streamProxyPath(stream.ID, "")
+				path := streamPath(stream.ID, "")
 				if stream.ID == "" {
 					path = proxyPath(u)
 				}
@@ -43,7 +43,7 @@ func playlistEntries(streams []Stream, qualities func(Stream) []Quality) []m3uEn
 				return
 			}
 			for _, q := range slices.Backward(qs) {
-				path := streamProxyPath(stream.ID, q.Resolution)
+				path := streamPath(stream.ID, q.Resolution)
 				if stream.ID == "" || q.Resolution == "" {
 					path = proxyPath(q.URL)
 				}
