@@ -23,7 +23,7 @@ const version = "voetbal/0.1"
 var templateFS embed.FS
 
 var templates = template.Must(template.New("").
-	Funcs(template.FuncMap{"proxyPath": proxyPath}).
+	Funcs(template.FuncMap{"proxyPath": proxyPath, "copyPath": copyPath}).
 	ParseFS(templateFS, "templates/*.html"))
 
 type card struct {
@@ -118,6 +118,7 @@ func main() {
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /play", handlePlay)
 	mux.HandleFunc("GET /proxy", handleProxy)
+	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
 	var handler http.Handler = mux
 	var locks []accessLock
