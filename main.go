@@ -139,7 +139,7 @@ func main() {
 		log.Printf("network lock enabled: %d prefixes", len(prefixes))
 	}
 	if allowed := parseRegionLock(os.Getenv("VOETBAL_REGION_LOCK")); len(allowed) > 0 {
-		path, err := ensureGeoDB(geoDBDir, geoDBURL)
+		path, err := ensureGeoDB(dataPath(), geoDBURL)
 		if err != nil {
 			log.Fatalf("region lock: %v", err)
 		}

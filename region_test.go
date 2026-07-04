@@ -37,6 +37,17 @@ func TestParseRegionLock(t *testing.T) {
 	}
 }
 
+func TestDataPath(t *testing.T) {
+	t.Setenv("VOETBAL_DATA_PATH", "")
+	if got := dataPath(); got != "/data" {
+		t.Errorf("got %q, want /data", got)
+	}
+	t.Setenv("VOETBAL_DATA_PATH", "/var/lib/voetbal")
+	if got := dataPath(); got != "/var/lib/voetbal" {
+		t.Errorf("got %q, want /var/lib/voetbal", got)
+	}
+}
+
 func TestGeoDBURL(t *testing.T) {
 	ts := time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
 	want := "https://download.db-ip.com/free/dbip-country-lite-2026-07.mmdb.gz"
