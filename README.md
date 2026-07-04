@@ -44,7 +44,7 @@ When both locks are configured, the network lock is checked first, and a request
 
 ### Region lock
 
-Set `VOETBAL_REGION_LOCK` to a comma-separated list of two-letter country codes to only allow access from those countries. When enabled, the app downloads a geo IP database into `/data` on startup (and refreshes it weekly), so mount a volume there to persist it:
+Set `VOETBAL_REGION_LOCK` to a comma-separated list of two-letter country codes to only allow access from those countries. When enabled, the app downloads a geo IP database into its data directory on startup (and refreshes it weekly), so mount a volume there to persist it. The data directory defaults to `/data` and can be changed with `VOETBAL_DATA_PATH`:
 
 ```
 docker run --rm -p 8000:8000 \

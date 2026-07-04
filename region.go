@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -17,10 +18,14 @@ import (
 )
 
 const (
-	geoDBDir    = "/data"
-	geoDBName   = "dbip-country-lite.mmdb"
-	geoDBMaxAge = 7 * 24 * time.Hour
+	defaultDataPath = "/data"
+	geoDBName       = "dbip-country-lite.mmdb"
+	geoDBMaxAge     = 7 * 24 * time.Hour
 )
+
+func dataPath() string {
+	return cmp.Or(os.Getenv("VOETBAL_DATA_PATH"), defaultDataPath)
+}
 
 func parseRegionLock(s string) map[string]bool {
 	allowed := make(map[string]bool)
