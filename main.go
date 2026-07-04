@@ -9,6 +9,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -26,13 +27,33 @@ var templates = template.Must(template.New("").
 	Funcs(template.FuncMap{"proxyPath": proxyPath, "copyPath": copyPath}).
 	ParseFS(templateFS, "templates/*.html"))
 
+type qualityView struct {
+	Label    string
+	PlayPath string // in-browser player page link
+	Path     string // short proxied path handed out by the copy button
+}
+
 type card struct {
 	Title     string
 	Thumb     string
 	Locked    bool
 	Region    string
 	IsOnline  bool
-	Qualities []Quality
+	Qualities []qualityView
+}
+
+func qualityViews(stream Stream, qualities []Quality) []qualityView {
+	var views []qualityView
+	for _, q := range qualities {
+		path := streamPath(stream.ID, q.Resolution)
+		playPath := playerPath(stream.ID, q.Resolution)
+		if stream.ID == "" {
+			playPath = "/play?" + url.Values{"src": {q.URL}, "title": {cmp.Or(stream.Title, "Stream")}}.Encode()
+			path = copyPath(q.URL)
+		}
+		views = append(views, qualityView{Label: q.Label, PlayPath: playPath, Path: path})
+	}
+	return views
 }
 
 type indexData struct {
@@ -53,7 +74,7 @@ func buildCards(streams []Stream) []card {
 				Locked:    len(stream.AllowedAreas) > 0,
 				Region:    regionLabel(stream),
 				IsOnline:  stream.IsOnline,
-				Qualities: streamQualities(stream),
+				Qualities: qualityViews(stream, streamQualities(stream)),
 			}
 		})
 	}
@@ -117,8 +138,13 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /play", handlePlay)
+	mux.HandleFunc("GET /player/nos/{id}", handlePlayer)
+	mux.HandleFunc("GET /player/nos/{id}/{resolution}", handlePlayer)
 	mux.HandleFunc("GET /playlist.m3u", handlePlaylist)
 	mux.HandleFunc("GET /proxy", handleProxy)
+	mux.HandleFunc("GET /proxy/nos/{id}/{resolution}/{file...}", handleSegment)
+	mux.HandleFunc("GET /stream/nos/{id}", handleStream)
+	mux.HandleFunc("GET /stream/nos/{id}/{resolution}", handleStream)
 	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
 	var handler http.Handler = mux

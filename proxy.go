@@ -80,7 +80,10 @@ func rewritePlaylist(text string, base *url.URL) string {
 }
 
 func handleProxy(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("url")
+	proxyUpstream(w, r, r.URL.Query().Get("url"))
+}
+
+func proxyUpstream(w http.ResponseWriter, r *http.Request, target string) {
 	parsed, err := url.Parse(target)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !hostAllowed(parsed.Hostname()) {
 		http.Error(w, "upstream host not allowed", http.StatusForbidden)

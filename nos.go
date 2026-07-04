@@ -40,6 +40,7 @@ type Format struct {
 }
 
 type Stream struct {
+	ID           string   `json:"id"`
 	Title        string   `json:"title"`
 	IsOnline     bool     `json:"isOnline"`
 	AllowedAreas []string `json:"allowedAreas"`
@@ -56,9 +57,10 @@ type Variant struct {
 }
 
 type Quality struct {
-	Label  string
-	URL    string
-	Height int
+	Label      string
+	URL        string
+	Resolution string
+	Height     int
 }
 
 func get(u string) (*http.Response, error) {
@@ -202,7 +204,7 @@ func streamQualities(stream Stream) []Quality {
 		if err != nil {
 			continue
 		}
-		qualities = append(qualities, Quality{Label: fmt.Sprintf("%dp", height), URL: v.URL, Height: height})
+		qualities = append(qualities, Quality{Label: fmt.Sprintf("%dp", height), URL: v.URL, Resolution: v.Resolution, Height: height})
 	}
 	slices.SortFunc(qualities, func(a, b Quality) int { return cmp.Compare(a.Height, b.Height) })
 	return qualities

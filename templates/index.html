@@ -60,8 +60,8 @@
           <span class="badge {{if $card.Locked}}locked{{else}}open{{end}}">{{if $card.Locked}}🔒{{else}}🌍{{end}} {{$card.Region}}</span>
         </div>
         <div class="qualities">
-          <div class="qrow"><span class="label">Web:</span> {{if $card.Qualities}}{{range $card.Qualities}}<a class="q" href="/play?src={{.URL}}&amp;title={{$card.Title}}">{{.Label}}</a>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
-          <div class="qrow"><span class="label">URL:</span> {{if $card.Qualities}}{{range $card.Qualities}}<button class="q" type="button" data-url="{{$.BaseURL}}{{copyPath .URL}}">{{.Label}}</button>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
+          <div class="qrow"><span class="label">Web:</span> {{if $card.Qualities}}{{range $card.Qualities}}<a class="q" href="{{.PlayPath}}">{{.Label}}</a>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
+          <div class="qrow"><span class="label">URL:</span> {{if $card.Qualities}}{{range $card.Qualities}}<button class="q" type="button" data-url="{{$.BaseURL}}{{.Path}}">{{.Label}}</button>{{end}}{{else}}<span class="q dim">unknown</span>{{end}}</div>
         </div>
       </div>
     </article>

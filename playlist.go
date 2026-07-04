@@ -15,13 +15,13 @@ var m3uAttr = strings.NewReplacer("\"", "'", "\r", " ", "\n", " ").Replace
 type m3uEntry struct {
 	Name string
 	Logo string
-	URL  string
+	Path string
 }
 
 // playlistEntries expands streams into playlist entries, one per quality
 // (highest first) so players offer explicit quality selection. Streams whose
-// qualities cannot be determined get a single entry with the master playlist
-// URL, which plays adaptively.
+// qualities cannot be determined get a single entry with the master playlist,
+// which plays adaptively.
 func playlistEntries(streams []Stream, qualities func(Stream) []Quality) []m3uEntry {
 	entries := make([][]m3uEntry, len(streams))
 	var wg sync.WaitGroup
@@ -35,14 +35,22 @@ func playlistEntries(streams []Stream, qualities func(Stream) []Quality) []m3uEn
 			logo := thumbnailURL(stream, 640)
 			qs := qualities(stream)
 			if len(qs) == 0 {
-				entries[i] = []m3uEntry{{Name: title, Logo: logo, URL: u}}
+				path := streamPath(stream.ID, "")
+				if stream.ID == "" {
+					path = proxyPath(u)
+				}
+				entries[i] = []m3uEntry{{Name: title, Logo: logo, Path: path}}
 				return
 			}
 			for _, q := range slices.Backward(qs) {
+				path := streamPath(stream.ID, q.Resolution)
+				if stream.ID == "" || q.Resolution == "" {
+					path = proxyPath(q.URL)
+				}
 				entries[i] = append(entries[i], m3uEntry{
 					Name: fmt.Sprintf("%s (%s)", title, q.Label),
 					Logo: logo,
-					URL:  q.URL,
+					Path: path,
 				})
 			}
 		})
@@ -63,7 +71,7 @@ func buildM3U(baseURL string, entries []m3uEntry) string {
 			fmt.Fprintf(&b, " tvg-logo=\"%s\"", m3uAttr(e.Logo))
 		}
 		fmt.Fprintf(&b, " group-title=\"NOS\",%s\n", name)
-		b.WriteString(baseURL + proxyPath(e.URL) + "\n")
+		b.WriteString(baseURL + e.Path + "\n")
 	}
 	return b.String()
 }
