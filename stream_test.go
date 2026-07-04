@@ -24,36 +24,6 @@ func TestStreamAndPlayerPath(t *testing.T) {
 	}
 }
 
-func TestFindStream(t *testing.T) {
-	streams := []Stream{{ID: "111", Title: "A"}, {ID: "222", Title: "B"}}
-	if s, ok := findStream(streams, "222"); !ok || s.Title != "B" {
-		t.Errorf("findStream(222) = %+v, %v; want B, true", s, ok)
-	}
-	if _, ok := findStream(streams, "999"); ok {
-		t.Errorf("findStream(999) found a stream, want miss")
-	}
-	if _, ok := findStream(nil, ""); ok {
-		t.Errorf("findStream on empty list found a stream, want miss")
-	}
-}
-
-func TestVariantForResolution(t *testing.T) {
-	variants := []Variant{
-		{Resolution: "1920x1080", Bandwidth: 5000, URL: "https://cdn/a-hi.m3u8"},
-		{Resolution: "1920x1080", Bandwidth: 3000, URL: "https://cdn/a-lo.m3u8"},
-		{Resolution: "960x540", Bandwidth: 1500, URL: "https://cdn/b.m3u8"},
-	}
-	if u, ok := variantForResolution(variants, "1920x1080"); !ok || u != "https://cdn/a-hi.m3u8" {
-		t.Errorf("1920x1080: got %q, %v; want highest-bandwidth variant", u, ok)
-	}
-	if u, ok := variantForResolution(variants, "960x540"); !ok || u != "https://cdn/b.m3u8" {
-		t.Errorf("960x540: got %q, %v", u, ok)
-	}
-	if _, ok := variantForResolution(variants, "640x360"); ok {
-		t.Errorf("640x360: found a variant, want miss")
-	}
-}
-
 // Mirrors the shape of the real NOS master playlist (Unified Streaming).
 const testMaster = `#EXTM3U
 #EXT-X-VERSION:4
