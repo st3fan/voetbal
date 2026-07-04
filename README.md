@@ -78,6 +78,19 @@ docker run --rm -p 8000:8000 \
   ghcr.io/st3fan/voetbal:main
 ```
 
+## Short copy URLs
+
+The "URL:" buttons on the homepage copy a stream URL for use in an external player. By default that is the full proxied URL (`http://host:8000/proxy?url=...`), which is painful to type into a TV or phone by hand. Set `VOETBAL_COPY_SHORT_URLS` to any non-empty value to copy a short URL instead, like `http://host:8000/r/a3f`, which redirects to the same proxied stream:
+
+```
+docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
+  -e VOETBAL_NETWORK_LOCK=192.168.0.0/16 \
+  -e VOETBAL_COPY_SHORT_URLS=1 \
+  ghcr.io/st3fan/voetbal:main
+```
+
+The code is derived from a hash of the stream URL (normally 3 lowercase hex characters, one more per collision), so a short URL keeps working across restarts for as long as NOS serves the stream under the same URL.
+
 ## Update
 
 ```
