@@ -157,6 +157,7 @@ func main() {
 		log.Printf("no access lock configured: set VOETBAL_NETWORK_LOCK or VOETBAL_REGION_LOCK to enable access")
 		handler = setupRequiredHandler()
 	}
+	handler = requestLogger(handler)
 	log.Printf("listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, handler))
 }
