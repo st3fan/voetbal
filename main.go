@@ -117,6 +117,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /play", handlePlay)
+	mux.HandleFunc("GET /playlist.m3u", handlePlaylist)
 	mux.HandleFunc("GET /proxy", handleProxy)
 	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
