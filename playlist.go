@@ -77,6 +77,9 @@ func buildM3U(baseURL string, entries []m3uEntry) string {
 }
 
 func handlePlaylist(w http.ResponseWriter, r *http.Request) {
+	// The playlist reflects the live stream lineup, so it must never be
+	// served from a client or intermediary cache.
+	w.Header().Set("Cache-Control", "no-store")
 	streams, err := fetchStreams()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
