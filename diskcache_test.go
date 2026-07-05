@@ -185,6 +185,27 @@ func TestParseSize(t *testing.T) {
 	}
 }
 
+func TestEnvBool(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"1", true},
+		{"true", true},
+		{"TRUE", true},
+		{" true ", true},
+		{"0", false},
+		{"false", false},
+	}
+	for _, tt := range tests {
+		t.Setenv("VOETBAL_TEST_BOOL", tt.in)
+		if got := envBool("VOETBAL_TEST_BOOL"); got != tt.want {
+			t.Errorf("envBool(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestDiskCacheStats(t *testing.T) {
 	c := testDiskCache(t, time.Hour, 1<<20)
 	now := time.Now()

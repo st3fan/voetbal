@@ -95,6 +95,8 @@ Segments flow through a two-tier cache. Each tier is bounded by a TTL **and** a 
 
 TTLs use Go duration syntax (`90s`, `3m`, `12h`); sizes accept `512MB`, `12GB`, or a plain number of megabytes.
 
+The segment caches are still experimental. They are enabled by default, but each tier can be turned off independently with `VOETBAL_MEMORY_CACHE_DISABLED=1` or `VOETBAL_DISK_CACHE_DISABLED=1` (`true` also works; unset or `0`/`false` keeps the tier on). With the memory tier off, every request fetches straight from the CDN and concurrent viewers no longer share fetches; with the disk tier off, nothing is written to `$VOETBAL_DATA_PATH/cache` and seeking back is served by the CDN.
+
 ```
 docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
   -e VOETBAL_NETWORK_LOCK=192.168.0.0/16 \
@@ -138,8 +140,10 @@ All logging goes to **stdout** as one JSON object per line, everything at level 
 | `VOETBAL_DATA_PATH` | `/data` | directory for the geo IP database and the disk cache |
 | `VOETBAL_MEMORY_CACHE_TTL` | `3m` | how long segments stay in memory |
 | `VOETBAL_MEMORY_CACHE_SIZE` | `512MB` | memory cache cap (`0` is not meaningful; lower it instead) |
+| `VOETBAL_MEMORY_CACHE_DISABLED` | *(unset)* | `1` or `true` turns off the memory tier |
 | `VOETBAL_DISK_CACHE_TTL` | `3h` | how long segments stay on disk |
 | `VOETBAL_DISK_CACHE_SIZE` | `12GB` | disk cache cap; `0` disables the disk tier |
+| `VOETBAL_DISK_CACHE_DISABLED` | *(unset)* | `1` or `true` turns off the disk tier |
 | `VOETBAL_COPY_SHORT_URLS` | *(unset)* | deprecated, no longer used |
 
 ## Update

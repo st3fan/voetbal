@@ -159,6 +159,20 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 	return d
 }
 
+// envBool reads a boolean option: unset or empty is false, anything else
+// must parse as a bool ("1", "true", "0", "false", ...).
+func envBool(name string) bool {
+	value := os.Getenv(name)
+	if value == "" {
+		return false
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		log.Fatalf("%s: invalid boolean %q", name, value)
+	}
+	return b
+}
+
 func envSize(name string, fallback int64) int64 {
 	value := os.Getenv(name)
 	if value == "" {
@@ -195,11 +209,22 @@ func main() {
 	mux.HandleFunc("GET /stream/nos/{id}/{resolution}", handleStream)
 	mux.HandleFunc("GET /r/{code}", handleShortURL)
 	mux.HandleFunc("GET /watchers", handleWatchers)
-	memoryCacheTTL = envDuration("VOETBAL_MEMORY_CACHE_TTL", memoryCacheTTL)
-	streamMux.maxBytes = envSize("VOETBAL_MEMORY_CACHE_SIZE", streamMux.maxBytes)
-	slog.Info("memory cache", "ttl", untilLabel(memoryCacheTTL), "max", humanBytes(streamMux.maxBytes))
+	if envBool("VOETBAL_MEMORY_CACHE_DISABLED") {
+		streamMux.disabled = true
+		slog.Info("memory cache disabled", "reason", "VOETBAL_MEMORY_CACHE_DISABLED")
+	} else {
+		memoryCacheTTL = envDuration("VOETBAL_MEMORY_CACHE_TTL", memoryCacheTTL)
+		streamMux.maxBytes = envSize("VOETBAL_MEMORY_CACHE_SIZE", streamMux.maxBytes)
+		slog.Info("memory cache", "ttl", untilLabel(memoryCacheTTL), "max", humanBytes(streamMux.maxBytes))
+	}
 	diskTTL := envDuration("VOETBAL_DISK_CACHE_TTL", 3*time.Hour)
-	if diskSize := envSize("VOETBAL_DISK_CACHE_SIZE", 12<<30); diskSize > 0 {
+	diskSize := envSize("VOETBAL_DISK_CACHE_SIZE", 12<<30)
+	switch {
+	case envBool("VOETBAL_DISK_CACHE_DISABLED"):
+		slog.Info("disk cache disabled", "reason", "VOETBAL_DISK_CACHE_DISABLED")
+	case diskSize == 0:
+		slog.Info("disk cache disabled", "reason", "VOETBAL_DISK_CACHE_SIZE=0")
+	default:
 		cache, err := newDiskCache(filepath.Join(dataPath(), "cache"), diskTTL, diskSize)
 		if err != nil {
 			slog.Info("disk cache disabled", "error", err.Error())
@@ -213,8 +238,6 @@ func main() {
 				}
 			}()
 		}
-	} else {
-		slog.Info("disk cache disabled", "reason", "VOETBAL_DISK_CACHE_SIZE=0")
 	}
 	var handler http.Handler = mux
 	var locks []accessLock
