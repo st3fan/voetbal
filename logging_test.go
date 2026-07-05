@@ -70,6 +70,9 @@ func TestNewRequestLogger(t *testing.T) {
 	if entry["client_ip"] != "203.0.0.0" {
 		t.Errorf("client_ip = %v, want 203.0.0.0", entry["client_ip"])
 	}
+	if entry["level"] != "INFO" {
+		t.Errorf("level = %v, want INFO (all HTTP logging is INFO, even 4xx)", entry["level"])
+	}
 
 	for _, secret := range []string{"secret request body", "secret response body", "secret-token", "203.0.113.7"} {
 		if strings.Contains(buf.String(), secret) {
@@ -83,5 +86,66 @@ func TestNewRequestLogger(t *testing.T) {
 		if _, found := group["header"]; found {
 			t.Errorf("%s headers logged: %v", name, group)
 		}
+	}
+}
+
+func TestLoggingTransport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	client := &http.Client{Transport: loggingTransport{
+		base:   http.DefaultTransport,
+		logger: slog.New(slog.NewJSONHandler(&buf, nil)),
+	}}
+	resp, err := client.Get(srv.URL + "/path?x=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("expected one JSON log line, got %q: %v", buf.String(), err)
+	}
+	if entry["msg"] != "upstream request" || entry["level"] != "INFO" {
+		t.Errorf("msg/level = %v/%v", entry["msg"], entry["level"])
+	}
+	if entry["method"] != "GET" || entry["url"] != srv.URL+"/path?x=1" {
+		t.Errorf("method/url = %v/%v", entry["method"], entry["url"])
+	}
+	if status, _ := entry["status"].(float64); int(status) != http.StatusOK {
+		t.Errorf("status = %v", entry["status"])
+	}
+	if _, ok := entry["duration_ms"]; !ok {
+		t.Errorf("duration_ms missing: %v", entry)
+	}
+}
+
+func TestLoggingTransportError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	dead := srv.URL
+	srv.Close()
+
+	var buf bytes.Buffer
+	client := &http.Client{Transport: loggingTransport{
+		base:   http.DefaultTransport,
+		logger: slog.New(slog.NewJSONHandler(&buf, nil)),
+	}}
+	if _, err := client.Get(dead); err == nil {
+		t.Fatal("expected connection error")
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("expected one JSON log line, got %q: %v", buf.String(), err)
+	}
+	if entry["msg"] != "upstream request failed" || entry["level"] != "INFO" {
+		t.Errorf("msg/level = %v/%v", entry["msg"], entry["level"])
+	}
+	if errText, _ := entry["error"].(string); errText == "" {
+		t.Errorf("error attribute missing: %v", entry)
 	}
 }

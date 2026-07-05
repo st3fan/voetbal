@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
-	"os"
+	"time"
 
 	sloghttp "github.com/samber/slog-http"
 )
@@ -37,9 +37,11 @@ func maskClientIP(ip string) string {
 // response bodies and headers are never logged.
 func newRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	logMiddleware := sloghttp.NewWithConfig(logger, sloghttp.Config{
+		// Everything logs at INFO for now; level-based filtering may come
+		// later.
 		DefaultLevel:     slog.LevelInfo,
-		ClientErrorLevel: slog.LevelWarn,
-		ServerErrorLevel: slog.LevelError,
+		ClientErrorLevel: slog.LevelInfo,
+		ServerErrorLevel: slog.LevelInfo,
 
 		WithRequestID:      true,
 		WithRequestBody:    false,
@@ -56,5 +58,35 @@ func newRequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 }
 
 func requestLogger(h http.Handler) http.Handler {
-	return newRequestLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil)))(h)
+	return newRequestLogger(slog.Default())(h)
+}
+
+// loggingTransport logs every outbound HTTP request as a structured entry:
+// method, full URL, status, and time to response headers. Each redirect hop
+// is logged individually. The logger is resolved at request time so the
+// package-level httpClient picks up the JSON default set in main.
+type loggingTransport struct {
+	base   http.RoundTripper
+	logger *slog.Logger // nil = slog.Default()
+}
+
+func (t loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	logger := t.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	start := time.Now()
+	resp, err := t.base.RoundTrip(req)
+	duration := time.Since(start).Milliseconds()
+	if err != nil {
+		logger.Info("upstream request failed",
+			"method", req.Method, "url", req.URL.String(),
+			"duration_ms", duration, "error", err.Error())
+		return resp, err
+	}
+	logger.Info("upstream request",
+		"method", req.Method, "url", req.URL.String(),
+		"status", resp.StatusCode, "duration_ms", duration,
+		"length", resp.ContentLength)
+	return resp, nil
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -88,7 +89,7 @@ func buildCards(streams []Stream) []card {
 func render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("render %s: %v", name, err)
+		slog.Info("render failed", "template", name, "error", err.Error())
 	}
 }
 
@@ -171,6 +172,9 @@ func envSize(name string, fallback int64) int64 {
 }
 
 func main() {
+	// All logging is structured JSON on stdout; this also routes the std
+	// log package (log.Fatalf) through the same handler.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	addr := flag.String("addr", ":8000", "listen address")
 	showVersion := flag.Bool("v", false, "print version and exit")
 	flag.Parse()
@@ -193,16 +197,16 @@ func main() {
 	mux.HandleFunc("GET /watchers", handleWatchers)
 	memoryCacheTTL = envDuration("VOETBAL_MEMORY_CACHE_TTL", memoryCacheTTL)
 	streamMux.maxBytes = envSize("VOETBAL_MEMORY_CACHE_SIZE", streamMux.maxBytes)
-	log.Printf("memory cache: ttl %s, max %s", untilLabel(memoryCacheTTL), humanBytes(streamMux.maxBytes))
+	slog.Info("memory cache", "ttl", untilLabel(memoryCacheTTL), "max", humanBytes(streamMux.maxBytes))
 	diskTTL := envDuration("VOETBAL_DISK_CACHE_TTL", 3*time.Hour)
 	if diskSize := envSize("VOETBAL_DISK_CACHE_SIZE", 12<<30); diskSize > 0 {
 		cache, err := newDiskCache(filepath.Join(dataPath(), "cache"), diskTTL, diskSize)
 		if err != nil {
-			log.Printf("disk cache disabled: %v", err)
+			slog.Info("disk cache disabled", "error", err.Error())
 		} else {
 			diskCaches = cache
-			log.Printf("disk cache: %s, ttl %s, max %s (%s already cached)",
-				cache.root, untilLabel(diskTTL), humanBytes(diskSize), humanBytes(cache.totalBytes()))
+			slog.Info("disk cache", "path", cache.root, "ttl", untilLabel(diskTTL),
+				"max", humanBytes(diskSize), "cached", humanBytes(cache.totalBytes()))
 			go func() {
 				for range time.Tick(time.Minute) {
 					diskCaches.prune(time.Now())
@@ -210,7 +214,7 @@ func main() {
 			}()
 		}
 	} else {
-		log.Printf("disk cache disabled: VOETBAL_DISK_CACHE_SIZE=0")
+		slog.Info("disk cache disabled", "reason", "VOETBAL_DISK_CACHE_SIZE=0")
 	}
 	var handler http.Handler = mux
 	var locks []accessLock
@@ -223,12 +227,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("network lock: AS%s: %v", asn, err)
 		}
-		log.Printf("network lock: AS%s announces %d prefixes", asn, len(announced))
+		slog.Info("network lock: ASN resolved", "asn", asn, "prefixes", len(announced))
 		prefixes = append(prefixes, announced...)
 	}
 	if len(prefixes) > 0 || len(asns) > 0 {
 		locks = append(locks, &networkLock{prefixes: prefixes})
-		log.Printf("network lock enabled: %d prefixes", len(prefixes))
+		slog.Info("network lock enabled", "prefixes", len(prefixes))
 	}
 	if allowed := parseRegionLock(os.Getenv("VOETBAL_REGION_LOCK")); len(allowed) > 0 {
 		path, err := ensureGeoDB(dataPath(), geoDBURL)
@@ -240,15 +244,15 @@ func main() {
 			log.Fatalf("region lock: %v", err)
 		}
 		locks = append(locks, &regionLock{allowed: allowed, lookup: geoDB{reader}})
-		log.Printf("region lock enabled: %s", strings.Join(slices.Sorted(maps.Keys(allowed)), ","))
+		slog.Info("region lock enabled", "regions", strings.Join(slices.Sorted(maps.Keys(allowed)), ","))
 	}
 	if len(locks) > 0 {
 		handler = lockMiddleware(locks, mux)
 	} else {
-		log.Printf("no access lock configured: set VOETBAL_NETWORK_LOCK or VOETBAL_REGION_LOCK to enable access")
+		slog.Info("no access lock configured: set VOETBAL_NETWORK_LOCK or VOETBAL_REGION_LOCK to enable access")
 		handler = setupRequiredHandler()
 	}
 	handler = requestLogger(handler)
-	log.Printf("listening on %s", *addr)
+	slog.Info("listening", "addr", *addr)
 	log.Fatal(http.ListenAndServe(*addr, handler))
 }

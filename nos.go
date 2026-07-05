@@ -22,11 +22,11 @@ const (
 )
 
 var httpClient = &http.Client{
-	Transport: &http.Transport{
+	Transport: loggingTransport{base: &http.Transport{
 		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 		ResponseHeaderTimeout: 15 * time.Second,
 		MaxIdleConnsPerHost:   8,
-	},
+	}},
 }
 
 type Image struct {
