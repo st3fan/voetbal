@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"os"
@@ -79,7 +79,7 @@ func ensureGeoDB(dir string, urlFor func(time.Time) string) (string, error) {
 	if err != nil {
 		if err2 := downloadGeoDB(urlFor(now.AddDate(0, -1, 0)), path); err2 != nil {
 			if statErr == nil {
-				log.Printf("region lock: keeping stale geo database: %v", errors.Join(err, err2))
+				slog.Info("region lock: keeping stale geo database", "error", errors.Join(err, err2).Error())
 				return path, nil
 			}
 			return "", errors.Join(err, err2)
