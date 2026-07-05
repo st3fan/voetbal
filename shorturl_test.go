@@ -3,10 +3,12 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestShortURLRegister(t *testing.T) {
@@ -101,7 +103,8 @@ func TestHandleShortURL(t *testing.T) {
 
 func TestHandleShortURLRefreshesOnMiss(t *testing.T) {
 	defer func(old func()) { refreshShortURLs = old }(refreshShortURLs)
-	u := "https://x.cdn.nos.nl/refresh.m3u8"
+	// Unique per run: the package-level registry survives go test -count=N.
+	u := fmt.Sprintf("https://x.cdn.nos.nl/refresh-%d.m3u8", time.Now().UnixNano())
 	refreshShortURLs = func() { shortURLs.register(u) }
 
 	sum := sha256.Sum256([]byte(u))

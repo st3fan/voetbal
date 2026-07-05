@@ -240,3 +240,12 @@ func TestTruncateMiddle(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestHitRate(t *testing.T) {
+	if got := hitRate(0, 0); got != "no lookups yet" {
+		t.Errorf("got %q", got)
+	}
+	if got := hitRate(3, 1); got != "3 hits · 1 misses · 75.0% hit rate" {
+		t.Errorf("got %q", got)
+	}
+}
