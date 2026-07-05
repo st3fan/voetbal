@@ -22,10 +22,12 @@ The app listens on <http://localhost:8000>. Stop it with Ctrl-C.
 ## Run in the background
 
 ```
-docker run -d --name voetbal --restart unless-stopped -p 8000:8000 ghcr.io/st3fan/voetbal:main
+docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
+  -v voetbal-data:/data \
+  ghcr.io/st3fan/voetbal:main
 ```
 
-With `--restart unless-stopped` the container comes back automatically after a crash or a reboot of the host, until you stop it yourself.
+With `--restart unless-stopped` the container comes back automatically after a crash or a reboot of the host, until you stop it yourself. The volume on `/data` persists the disk cache and the geo IP database across restarts — see [Caching](#caching).
 
 Manage it with:
 
@@ -53,13 +55,6 @@ docker run --rm -p 8000:8000 \
   ghcr.io/st3fan/voetbal:main
 ```
 
-```
-docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
-  -e VOETBAL_REGION_LOCK=CA,US \
-  -v voetbal-data:/data \
-  ghcr.io/st3fan/voetbal:main
-```
-
 IP geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0).
 
 ### Network lock
@@ -78,18 +73,74 @@ docker run --rm -p 8000:8000 \
   ghcr.io/st3fan/voetbal:main
 ```
 
-## Short copy URLs
+## Watching streams
 
-The "URL:" buttons on the homepage copy a stream URL for use in an external player. By default that is the full proxied URL (`http://host:8000/proxy?url=...`), which is painful to type into a TV or phone by hand. Set `VOETBAL_COPY_SHORT_URLS` to any non-empty value to copy a short URL instead, like `http://host:8000/r/a3f`, which redirects to the same proxied stream:
+The homepage lists the live NOS streams with one entry per available quality:
+
+- **Web:** links open the in-browser player at `/player/nos/{id}/{resolution}`.
+- **URL:** buttons copy a short stream URL like `http://host:8000/stream/nos/2616266/1920x1080` for use in an external player (VLC, IPTV apps, a TV). The URL serves a standard HLS playlist; everything it references is proxied through the app, so the external player never talks to NOS directly.
+
+Stream ids and resolutions are resolved against the NOS API on every request — a URL keeps working for as long as NOS broadcasts that stream, and returns 404 afterwards.
+
+### IPTV playlist
+
+`http://host:8000/playlist.m3u` serves an extended M3U playlist for IPTV applications: one channel per stream and quality (highest first, with name, logo and group attributes). Point an IPTV app at that URL and the channel list stays in sync with whatever NOS is broadcasting.
+
+## Caching
+
+Segments flow through a two-tier cache. Each tier is bounded by a TTL **and** a size — whichever limit is hit first starts evicting, oldest first:
+
+- **Memory** (default: 3 minutes / 512MB) — concurrent viewers of the same stream share a single upstream fetch, and everyone watching live is served the same recent segments from memory. Configure with `VOETBAL_MEMORY_CACHE_TTL` and `VOETBAL_MEMORY_CACHE_SIZE`.
+- **Disk** (default: 180 minutes / 12GB) — every fetched segment is also written to `$VOETBAL_DATA_PATH/cache`, so seeking back in a stream is served from disk instead of the CDN. NOS playlists carry roughly a 140-minute seek-back window, which the default TTL covers. The cache survives restarts when `/data` is on a volume. Configure with `VOETBAL_DISK_CACHE_TTL` and `VOETBAL_DISK_CACHE_SIZE`; set the size to `0` to disable the disk tier.
+
+TTLs use Go duration syntax (`90s`, `3m`, `12h`); sizes accept `512MB`, `12GB`, or a plain number of megabytes.
 
 ```
 docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
   -e VOETBAL_NETWORK_LOCK=192.168.0.0/16 \
-  -e VOETBAL_COPY_SHORT_URLS=1 \
+  -e VOETBAL_MEMORY_CACHE_SIZE=150MB \
+  -e VOETBAL_DISK_CACHE_SIZE=4GB \
+  -v voetbal-data:/data \
   ghcr.io/st3fan/voetbal:main
 ```
 
-The code is derived from a hash of the stream URL (normally 3 lowercase hex characters, one more per collision), so a short URL keeps working across restarts for as long as NOS serves the stream under the same URL.
+Rough sizing: cache bytes ≈ bitrate ÷ 8 × retention, per variant actually being watched. At NOS bitrates that is about 0.55 MB/s for 1080p (≈ 500MB per 15 minutes) down to 0.11 MB/s for 360p. Only requested segments are cached, so idle streams cost nothing. On small hosts, keep `VOETBAL_MEMORY_CACHE_SIZE` well under available RAM and consider setting `GOMEMLIMIT` (e.g. `GOMEMLIMIT=230MiB`) so the Go runtime stays inside your memory budget.
+
+Stream metadata (the NOS stream list and the per-stream playlist locations) is cached in memory for 12 hours and re-fetched on demand; this is not configurable.
+
+## Status pages
+
+- `/watchers` shows who is currently watching (IP addresses anonymized to their first two octets), since when, and how many requests they made.
+- `/caches` shows every cache entry with its expiration and contents, hit/miss statistics per tier, and how full each tier is.
+
+Both pages sit behind the access locks, auto-refresh every 5 seconds, and are linked for humans rather than machines — there is no JSON API.
+
+## Logging
+
+All logging goes to **stdout** as one JSON object per line, everything at level `INFO`. Three kinds of entries:
+
+- application events (startup configuration, cache setup, lock configuration),
+- one entry per incoming HTTP request — method, path, status, latency and a `client_ip` masked to its first two octets; request/response bodies and headers are never logged,
+- one entry per outgoing HTTP request to NOS/CDN — method, full URL, status and duration.
+
+`docker logs -f voetbal` streams them; pipe through `jq` to filter, e.g. `docker logs voetbal | jq 'select(.msg == "upstream request")'`.
+
+## Short copy URLs (deprecated)
+
+`VOETBAL_COPY_SHORT_URLS` predates the short `/stream/nos/…` URLs and no longer affects the homepage — the copy buttons always hand out short URLs now. Previously copied `/r/{code}` links keep redirecting to the stream they were created for. The option can be removed from your configuration.
+
+## Configuration reference
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VOETBAL_NETWORK_LOCK` | *(unset)* | allow access from IPs / CIDRs / ASNs; unset together with region lock = deny all |
+| `VOETBAL_REGION_LOCK` | *(unset)* | allow access from countries (two-letter codes) |
+| `VOETBAL_DATA_PATH` | `/data` | directory for the geo IP database and the disk cache |
+| `VOETBAL_MEMORY_CACHE_TTL` | `3m` | how long segments stay in memory |
+| `VOETBAL_MEMORY_CACHE_SIZE` | `512MB` | memory cache cap (`0` is not meaningful; lower it instead) |
+| `VOETBAL_DISK_CACHE_TTL` | `3h` | how long segments stay on disk |
+| `VOETBAL_DISK_CACHE_SIZE` | `12GB` | disk cache cap; `0` disables the disk tier |
+| `VOETBAL_COPY_SHORT_URLS` | *(unset)* | deprecated, no longer used |
 
 ## Update
 
@@ -97,5 +148,7 @@ The code is derived from a hash of the stream URL (normally 3 lowercase hex char
 docker pull ghcr.io/st3fan/voetbal:main
 docker stop voetbal
 docker rm voetbal
-docker run -d --name voetbal --restart unless-stopped -p 8000:8000 ghcr.io/st3fan/voetbal:main
+docker run -d --name voetbal --restart unless-stopped -p 8000:8000 \
+  -v voetbal-data:/data \
+  ghcr.io/st3fan/voetbal:main
 ```
