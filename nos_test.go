@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +79,42 @@ func TestThumbnailURL(t *testing.T) {
 	}
 	if got := thumbnailURL(stream, 2000); got != "w1280" {
 		t.Errorf("got %q, want w1280", got)
+	}
+}
+
+func TestSetBrowserHeaders(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://odi.cdn.nos.nl/live/seg1.ts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setBrowserHeaders(req)
+	if ua := req.Header.Get("User-Agent"); !strings.Contains(ua, "Mozilla/5.0") || !strings.Contains(ua, "Chrome/") {
+		t.Errorf("User-Agent does not look like a browser: %q", ua)
+	}
+	for _, name := range []string{"Accept", "Accept-Language", "Origin", "Referer", "Sec-Ch-Ua", "Sec-Fetch-Mode"} {
+		if req.Header.Get(name) == "" {
+			t.Errorf("missing %s header", name)
+		}
+	}
+	if got := req.Header.Get("Sec-Fetch-Site"); got != "same-site" {
+		t.Errorf("Sec-Fetch-Site for nos.nl subdomain = %q, want same-site", got)
+	}
+}
+
+func TestSecFetchSite(t *testing.T) {
+	tests := []struct {
+		host string
+		want string
+	}{
+		{"nos.nl", "same-site"},
+		{"odi.cdn.nos.nl", "same-site"},
+		{"NOS.NL", "same-site"},
+		{"cdn.streamgate.nl", "cross-site"},
+		{"evilnos.nl", "cross-site"},
+	}
+	for _, tt := range tests {
+		if got := secFetchSite(tt.host); got != tt.want {
+			t.Errorf("secFetchSite(%q) = %q, want %q", tt.host, got, tt.want)
+		}
 	}
 }

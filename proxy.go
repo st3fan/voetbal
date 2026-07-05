@@ -95,7 +95,7 @@ func proxyUpstream(w http.ResponseWriter, r *http.Request, target string) {
 		http.Error(w, "invalid upstream url", http.StatusBadRequest)
 		return
 	}
-	req.Header.Set("User-Agent", userAgent)
+	setBrowserHeaders(req)
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
 	}

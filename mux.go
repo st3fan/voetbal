@@ -61,7 +61,7 @@ func (e *muxEntry) fetch(rawURL string) {
 		e.finish(err)
 		return
 	}
-	req.Header.Set("User-Agent", userAgent)
+	setBrowserHeaders(req)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		e.finish(err)

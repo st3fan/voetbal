@@ -18,8 +18,35 @@ import (
 const (
 	apiURL      = "https://nos.nl/api/live-livestreams"
 	hlsMimetype = "application/vnd.apple.mpegurl"
-	userAgent   = "voetbal/0.1"
+	userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 )
+
+// setBrowserHeaders makes an upstream request look like it comes from the NOS
+// web player running in desktop Chrome.
+func setBrowserHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "nl,en-US;q=0.9,en;q=0.8")
+	req.Header.Set("Origin", "https://nos.nl")
+	req.Header.Set("Referer", "https://nos.nl/")
+	req.Header.Set("Sec-Ch-Ua", `"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="99"`)
+	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
+	req.Header.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", secFetchSite(req.URL.Hostname()))
+}
+
+// secFetchSite reports what Chrome would send for a request initiated from
+// https://nos.nl: "same-site" for nos.nl and its subdomains, "cross-site"
+// for third-party CDNs.
+func secFetchSite(host string) string {
+	host = strings.ToLower(host)
+	if host == "nos.nl" || strings.HasSuffix(host, ".nos.nl") {
+		return "same-site"
+	}
+	return "cross-site"
+}
 
 var httpClient = &http.Client{
 	Transport: loggingTransport{base: &http.Transport{
@@ -68,7 +95,7 @@ func get(u string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	setBrowserHeaders(req)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
