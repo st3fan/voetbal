@@ -16,8 +16,8 @@ import (
 // written through to {VOETBAL_DATA_PATH}/cache/{key}, so seeking back in a
 // stream is served from disk instead of the CDN. The index is rebuilt from
 // the directory at startup, so the cache survives restarts. Bounded by TTL
-// and size, whichever hits first. A zero size (VOETBAL_DISK_CACHE_SIZE=0)
-// or an unusable directory disables the tier.
+// and size, whichever hits first. VOETBAL_DISK_CACHE_DISABLED, a zero size
+// (VOETBAL_DISK_CACHE_SIZE=0) or an unusable directory disables the tier.
 
 type diskFile struct {
 	Size    int64

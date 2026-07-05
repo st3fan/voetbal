@@ -24,7 +24,8 @@ const (
 	muxFetchLimit  = time.Minute
 )
 
-// Configurable via VOETBAL_MEMORY_CACHE_TTL / VOETBAL_MEMORY_CACHE_SIZE.
+// Configurable via VOETBAL_MEMORY_CACHE_TTL / VOETBAL_MEMORY_CACHE_SIZE;
+// VOETBAL_MEMORY_CACHE_DISABLED turns the tier off entirely.
 var memoryCacheTTL = 3 * time.Minute
 
 type muxEntry struct {
@@ -194,6 +195,7 @@ func (e *muxEntry) describe() string {
 
 type muxCache struct {
 	mu       sync.Mutex
+	disabled bool // VOETBAL_MEMORY_CACHE_DISABLED: nothing shared, nothing kept
 	maxBytes int64
 	entries  map[string]*muxEntry
 	hits     int64 // requests served from an existing entry
@@ -213,6 +215,9 @@ func newMuxCache(maxBytes int64) *muxCache {
 func (c *muxCache) peek(key string) *muxEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.disabled {
+		return nil
+	}
 	if e, ok := c.entries[key]; ok && !e.expired(time.Now()) {
 		c.hits++
 		return e
@@ -222,10 +227,17 @@ func (c *muxCache) peek(key string) *muxEntry {
 
 // get returns the live entry for key, starting a shared fetch of rawURL on
 // a miss. persist, if non-nil, receives the complete body after a
-// successful fetch.
+// successful fetch. On a disabled cache every call fetches fresh: the entry
+// is not stored, so nothing is shared or retained, but persist still runs
+// (the disk tier is controlled separately).
 func (c *muxCache) get(key, rawURL string, ttl time.Duration, persist func([]byte)) *muxEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.disabled {
+		e := newMuxEntry(key, ttl, persist)
+		c.fetches.Go(func() { e.fetch(rawURL) })
+		return e
+	}
 	now := time.Now()
 	if e, ok := c.entries[key]; ok && !e.expired(now) {
 		c.hits++

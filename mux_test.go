@@ -135,6 +135,48 @@ func TestMuxFollowerJoinsMidDownload(t *testing.T) {
 	}
 }
 
+func TestMuxDisabledFetchesFreshEveryTime(t *testing.T) {
+	var hits atomic.Int64
+	srv := slowUpstream(t, &hits, []byte("body"), nil, nil)
+	defer srv.Close()
+
+	c := newMuxCache(64 << 20)
+	c.disabled = true
+	c.get("k", srv.URL, time.Minute, nil).waitDone()
+	if c.peek("k") != nil {
+		t.Fatal("peek on a disabled cache returned an entry")
+	}
+	c.get("k", srv.URL, time.Minute, nil).waitDone()
+	if hits.Load() != 2 {
+		t.Errorf("upstream hit %d times, want 2", hits.Load())
+	}
+	if total := c.totalBytes(); total != 0 {
+		t.Errorf("disabled cache retains %d bytes", total)
+	}
+	if views := c.views(time.Now()); len(views) != 0 {
+		t.Errorf("disabled cache has %d views", len(views))
+	}
+}
+
+func TestMuxDisabledStillPersists(t *testing.T) {
+	var hits atomic.Int64
+	srv := slowUpstream(t, &hits, []byte("segment-bytes"), nil, nil)
+	defer srv.Close()
+
+	persisted := make(chan []byte, 1)
+	c := newMuxCache(64 << 20)
+	c.disabled = true
+	c.get("k", srv.URL, time.Minute, func(data []byte) { persisted <- data }).waitDone()
+	select {
+	case data := <-persisted:
+		if string(data) != "segment-bytes" {
+			t.Errorf("persisted %q", data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("persist callback not called on a disabled cache")
+	}
+}
+
 func TestMuxErrorEvictedAndRetried(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := srv.URL

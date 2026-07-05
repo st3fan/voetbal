@@ -290,10 +290,13 @@ func handleCaches(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	entries := slices.Concat(streamCaches.views(now), streamMux.views(now), diskCaches.views(now))
 	slices.SortFunc(entries, func(a, b cacheView) int { return cmp.Compare(a.Key, b.Key) })
-	memoryHits, memoryMisses := streamMux.stats()
-	memory := fmt.Sprintf("%s · %s of %s · ttl %s",
-		hitRate(memoryHits, memoryMisses), humanBytes(streamMux.totalBytes()),
-		humanBytes(streamMux.maxBytes), untilLabel(memoryCacheTTL))
+	memory := "disabled"
+	if !streamMux.disabled {
+		memoryHits, memoryMisses := streamMux.stats()
+		memory = fmt.Sprintf("%s · %s of %s · ttl %s",
+			hitRate(memoryHits, memoryMisses), humanBytes(streamMux.totalBytes()),
+			humanBytes(streamMux.maxBytes), untilLabel(memoryCacheTTL))
+	}
 	disk := "disabled"
 	if diskCaches.enabled() {
 		diskHits, diskMisses := diskCaches.stats()
