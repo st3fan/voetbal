@@ -217,6 +217,8 @@ func main() {
 		streamMux.maxBytes = envSize("VOETBAL_MEMORY_CACHE_SIZE", streamMux.maxBytes)
 		slog.Info("memory cache", "ttl", untilLabel(memoryCacheTTL), "max", humanBytes(streamMux.maxBytes))
 	}
+	slowSegmentThreshold.Store(envDuration("VOETBAL_SLOW_SEGMENT_WARN", slowSegmentThreshold.Load()))
+	slog.Info("slow segment warning", "threshold", slowSegmentThreshold.Load().String())
 	diskTTL := envDuration("VOETBAL_DISK_CACHE_TTL", 3*time.Hour)
 	diskSize := envSize("VOETBAL_DISK_CACHE_SIZE", 12<<30)
 	switch {

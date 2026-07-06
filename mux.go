@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +29,29 @@ const (
 // Configurable via VOETBAL_MEMORY_CACHE_TTL / VOETBAL_MEMORY_CACHE_SIZE;
 // VOETBAL_MEMORY_CACHE_DISABLED turns the tier off entirely.
 var memoryCacheTTL = 3 * time.Minute
+
+// atomicDuration is a time.Duration that is safe to read from the decoupled
+// fetch goroutine while it is (re)configured elsewhere.
+type atomicDuration struct{ v atomic.Int64 }
+
+func (a *atomicDuration) Load() time.Duration   { return time.Duration(a.v.Load()) }
+func (a *atomicDuration) Store(d time.Duration) { a.v.Store(int64(d)) }
+
+// slowSegmentThreshold bounds how long a segment may take before it is logged
+// as a stutter risk: a shared upstream download or a client's time-to-first-
+// byte past this triggers a slog.Warn. Configurable via
+// VOETBAL_SLOW_SEGMENT_WARN. Stored atomically because warnIfSlow reads it
+// from the decoupled fetch goroutine.
+var slowSegmentThreshold = func() *atomicDuration {
+	a := &atomicDuration{}
+	a.Store(3 * time.Second)
+	return a
+}()
+
+// isPlaylistKey reports whether a mux key addresses a media playlist rather
+// than a segment; playlists poll on a short TTL and are excluded from the
+// slow-segment warnings.
+func isPlaylistKey(key string) bool { return strings.HasSuffix(key, "/playlist") }
 
 type muxEntry struct {
 	key     string
@@ -55,6 +80,7 @@ func newMuxEntry(key string, ttl time.Duration, persist func([]byte)) *muxEntry 
 // client's request context so a disconnecting viewer does not abort the
 // download for the others.
 func (e *muxEntry) fetch(rawURL string) {
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), muxFetchLimit)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -69,6 +95,7 @@ func (e *muxEntry) fetch(rawURL string) {
 		return
 	}
 	defer resp.Body.Close()
+	ttfb := time.Since(start)
 	e.mu.Lock()
 	e.status = resp.StatusCode
 	e.contentType = cmp.Or(resp.Header.Get("Content-Type"), "application/octet-stream")
@@ -77,9 +104,11 @@ func (e *muxEntry) fetch(rawURL string) {
 	e.cond.Broadcast()
 	e.mu.Unlock()
 	chunk := make([]byte, 64<<10)
+	var bytes int64
 	for {
 		n, err := resp.Body.Read(chunk)
 		if n > 0 {
+			bytes += int64(n)
 			e.mu.Lock()
 			e.buf = append(e.buf, chunk[:n]...)
 			e.cond.Broadcast()
@@ -89,10 +118,26 @@ func (e *muxEntry) fetch(rawURL string) {
 			if errors.Is(err, io.EOF) {
 				err = nil
 			}
+			status := resp.StatusCode
 			e.finish(err)
+			e.warnIfSlow(rawURL, ttfb, time.Since(start), bytes, status, err)
 			return
 		}
 	}
+}
+
+// warnIfSlow logs a WARN when a shared upstream segment download takes longer
+// than slowSegmentThreshold: a slow leader fetch stalls every viewer coalesced
+// onto it. Playlists and failed fetches are skipped (the latter are already
+// logged by loggingTransport).
+func (e *muxEntry) warnIfSlow(rawURL string, ttfb, total time.Duration, bytes int64, status int, err error) {
+	if err != nil || isPlaylistKey(e.key) || total <= slowSegmentThreshold.Load() {
+		return
+	}
+	slog.Warn("slow upstream segment",
+		"key", e.key, "url", rawURL,
+		"ttfb_ms", ttfb.Milliseconds(), "duration_ms", total.Milliseconds(),
+		"bytes", bytes, "status", status)
 }
 
 func (e *muxEntry) finish(err error) {

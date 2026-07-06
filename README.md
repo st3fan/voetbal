@@ -119,13 +119,14 @@ Both pages sit behind the access locks, auto-refresh every 5 seconds, and are li
 
 ## Logging
 
-All logging goes to **stdout** as one JSON object per line, everything at level `INFO`. Three kinds of entries:
+All logging goes to **stdout** as one JSON object per line, mostly at level `INFO`. Four kinds of entries:
 
 - application events (startup configuration, cache setup, lock configuration),
 - one entry per incoming HTTP request — method, path, status, latency and a `client_ip` masked to its first two octets; request/response bodies and headers are never logged,
-- one entry per outgoing HTTP request to NOS/CDN — method, full URL, status and duration.
+- one entry per outgoing HTTP request to NOS/CDN — method, full URL, status and duration,
+- `WARN` entries flagging stutter risk when a segment is slow: `slow upstream segment` (a shared upstream download took longer than `VOETBAL_SLOW_SEGMENT_WARN`) and `slow segment delivery` (a viewer's time-to-first-byte exceeded it, tagged with the serving `tier`).
 
-`docker logs -f voetbal` streams them; pipe through `jq` to filter, e.g. `docker logs voetbal | jq 'select(.msg == "upstream request")'`.
+`docker logs -f voetbal` streams them; pipe through `jq` to filter, e.g. `docker logs voetbal | jq 'select(.msg == "upstream request")'`. To watch for stutter, tail the warnings: `docker logs -f voetbal | jq 'select(.level == "WARN")'`.
 
 ## Short copy URLs (deprecated)
 
@@ -144,6 +145,7 @@ All logging goes to **stdout** as one JSON object per line, everything at level 
 | `VOETBAL_DISK_CACHE_TTL` | `3h` | how long segments stay on disk |
 | `VOETBAL_DISK_CACHE_SIZE` | `12GB` | disk cache cap; `0` disables the disk tier |
 | `VOETBAL_DISK_CACHE_DISABLED` | *(unset)* | `1` or `true` turns off the disk tier |
+| `VOETBAL_SLOW_SEGMENT_WARN` | `3s` | log a `WARN` when an upstream segment fetch, or a viewer's time-to-first-byte, exceeds this |
 | `VOETBAL_COPY_SHORT_URLS` | *(unset)* | deprecated, no longer used |
 
 ## Update
