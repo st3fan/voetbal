@@ -272,3 +272,55 @@ func TestHandleStreamMediaPlaylistViaMux(t *testing.T) {
 		t.Errorf("upstream hit %d times, want 1 (polls within 2s coalesce)", hits.Load())
 	}
 }
+
+func TestHandleSegmentWarnsOnSlowDelivery(t *testing.T) {
+	withThreshold(t, 10*time.Millisecond)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(40 * time.Millisecond) // delay the response headers -> slow TTFB
+		w.Write([]byte("segment-bytes"))
+	}))
+	defer srv.Close()
+	stubStreamEnv(t, srv.URL)
+
+	buf := captureLogs(t)
+	rec := httptest.NewRecorder()
+	handleSegment(rec, segmentRequest("seg-1.ts"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+
+	entry := findLog(t, buf, "slow segment delivery")
+	if entry == nil {
+		t.Fatalf("expected slow segment delivery warning, got: %s", buf.String())
+	}
+	if entry["level"] != "WARN" {
+		t.Errorf("level = %v, want WARN", entry["level"])
+	}
+	if entry["tier"] != "upstream" {
+		t.Errorf("tier = %v, want upstream", entry["tier"])
+	}
+	if entry["file"] != "seg-1.ts" {
+		t.Errorf("file = %v, want seg-1.ts", entry["file"])
+	}
+	if entry["client_ip"] == nil {
+		t.Errorf("client_ip missing: %v", entry)
+	}
+}
+
+func TestHandleSegmentNoWarnOnFastDelivery(t *testing.T) {
+	withThreshold(t, time.Second)
+	var hits atomic.Int64
+	srv := slowUpstream(t, &hits, []byte("segment-bytes"), nil, nil)
+	defer srv.Close()
+	stubStreamEnv(t, srv.URL)
+
+	buf := captureLogs(t)
+	rec := httptest.NewRecorder()
+	handleSegment(rec, segmentRequest("seg-1.ts"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if entry := findLog(t, buf, "slow segment delivery"); entry != nil {
+		t.Errorf("fast delivery should not warn: %v", entry)
+	}
+}

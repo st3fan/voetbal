@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -188,7 +189,8 @@ func handleSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	watchers.touch(clientIP(r), now)
 	if e := streamMux.peek(key); e != nil {
-		serveMuxEntry(w, e)
+		ttfb, _ := serveMuxEntry(w, e)
+		warnSlowDelivery(r, "memory", ttfb)
 		return
 	}
 	if onDisk {
@@ -202,16 +204,34 @@ func handleSegment(w http.ResponseWriter, r *http.Request) {
 		disk := diskCaches // captured now: persist runs on the fetch goroutine later
 		persist = func(data []byte) { disk.put(key, data, time.Now()) }
 	}
-	serveMuxEntry(w, streamMux.get(key, target, memoryCacheTTL, persist))
+	ttfb, _ := serveMuxEntry(w, streamMux.get(key, target, memoryCacheTTL, persist))
+	warnSlowDelivery(r, "upstream", ttfb)
+}
+
+// warnSlowDelivery logs a WARN when a viewer waited longer than
+// slowSegmentThreshold for the first byte of a segment. Time-to-first-byte
+// (not total transfer time) is used so a slow client connection does not
+// register as a server-side stall.
+func warnSlowDelivery(r *http.Request, tier string, ttfb time.Duration) {
+	if ttfb <= slowSegmentThreshold.Load() {
+		return
+	}
+	slog.Warn("slow segment delivery",
+		"id", r.PathValue("id"), "resolution", r.PathValue("resolution"),
+		"file", r.PathValue("file"), "tier", tier,
+		"ttfb_ms", ttfb.Milliseconds(), "client_ip", maskClientIP(clientIP(r)))
 }
 
 // serveMuxEntry streams a mux entry to the client, following the shared
-// buffer while the upstream fetch is still in progress.
-func serveMuxEntry(w http.ResponseWriter, e *muxEntry) {
+// buffer while the upstream fetch is still in progress. It reports the
+// time-to-first-byte (how long waitHeader blocked) and whether serving began.
+func serveMuxEntry(w http.ResponseWriter, e *muxEntry) (time.Duration, bool) {
+	start := time.Now()
 	if err := e.waitHeader(); err != nil {
 		http.Error(w, "upstream fetch failed: "+err.Error(), http.StatusBadGateway)
-		return
+		return 0, false
 	}
+	ttfb := time.Since(start)
 	ctype, _, _ := strings.Cut(e.contentType, ";")
 	w.Header().Set("Content-Type", strings.TrimSpace(ctype))
 	if length, ok := e.lengthIfDone(); ok {
@@ -219,6 +239,7 @@ func serveMuxEntry(w http.ResponseWriter, e *muxEntry) {
 	}
 	w.WriteHeader(e.status)
 	e.serve(w)
+	return ttfb, true
 }
 
 // serveSegmentFile serves a disk-cached segment; http.ServeFile provides

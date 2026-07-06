@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -325,5 +328,94 @@ func TestMuxStats(t *testing.T) {
 	h, m := c.stats()
 	if h != 2 || m != 1 {
 		t.Errorf("stats = %d hits, %d misses; want 2, 1", h, m)
+	}
+}
+
+// captureLogs redirects slog.Default to a buffer for the duration of the test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return &buf
+}
+
+// withThreshold temporarily overrides the slow-segment warning threshold.
+func withThreshold(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := slowSegmentThreshold.Load()
+	slowSegmentThreshold.Store(d)
+	t.Cleanup(func() { slowSegmentThreshold.Store(old) })
+}
+
+// findLog returns the first captured JSON log entry with the given msg, or nil.
+func findLog(t *testing.T, buf *bytes.Buffer, msg string) map[string]any {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			continue
+		}
+		if m["msg"] == msg {
+			return m
+		}
+	}
+	return nil
+}
+
+func TestFetchWarnsOnSlowUpstreamSegment(t *testing.T) {
+	withThreshold(t, 10*time.Millisecond)
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	srv := slowUpstream(t, &hits, []byte("first"), []byte("rest"), gate)
+	defer srv.Close()
+
+	buf := captureLogs(t)
+	c := newMuxCache(64 << 20)
+	e := c.get("nos/111/848x480/seg-1.ts", srv.URL, time.Minute, nil)
+	time.Sleep(30 * time.Millisecond)
+	close(gate)
+	e.waitDone()
+	c.wait() // the warning is emitted after finish, on the fetch goroutine
+
+	entry := findLog(t, buf, "slow upstream segment")
+	if entry == nil {
+		t.Fatalf("expected slow upstream segment warning, got: %s", buf.String())
+	}
+	if entry["level"] != "WARN" {
+		t.Errorf("level = %v, want WARN", entry["level"])
+	}
+	if entry["key"] != "nos/111/848x480/seg-1.ts" {
+		t.Errorf("key = %v", entry["key"])
+	}
+	if _, ok := entry["duration_ms"]; !ok {
+		t.Errorf("duration_ms missing: %v", entry)
+	}
+	if bytes, _ := entry["bytes"].(float64); int(bytes) != len("firstrest") {
+		t.Errorf("bytes = %v, want %d", entry["bytes"], len("firstrest"))
+	}
+}
+
+func TestFetchDoesNotWarnForSlowPlaylist(t *testing.T) {
+	withThreshold(t, 10*time.Millisecond)
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	srv := slowUpstream(t, &hits, []byte("#EXTM3U"), []byte("\nseg.ts"), gate)
+	defer srv.Close()
+
+	buf := captureLogs(t)
+	c := newMuxCache(64 << 20)
+	e := c.get("nos/111/848x480/playlist", srv.URL, time.Minute, nil)
+	time.Sleep(30 * time.Millisecond)
+	close(gate)
+	e.waitDone()
+	c.wait()
+
+	if entry := findLog(t, buf, "slow upstream segment"); entry != nil {
+		t.Errorf("playlist should not warn as slow segment: %v", entry)
 	}
 }
